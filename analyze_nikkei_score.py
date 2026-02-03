@@ -169,7 +169,7 @@ def get_scored_stocks(status_callback=None):
     results = []
     
     # Use ThreadPool to speed up
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(analyze_stock, code) for code in tickers]
         total_futures = len(futures)
         

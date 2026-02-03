@@ -1,4 +1,19 @@
 import streamlit as st
+import sys
+import traceback
+
+# --- Global Error Handler ---
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    st.error("アプリケーションエラーが発生しました")
+    st.code("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+
+sys.excepthook = handle_exception
+
+# --- Imports ---
+
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
