@@ -1,8 +1,7 @@
 requests
 beautifulsoup4
-yfinance
+yfinance>=0.2.0
 pandas
-streamlit
+streamlit>=1.40.0
 plotly
 lxml
-altair<5
