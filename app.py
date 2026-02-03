@@ -131,7 +131,7 @@ def render_analysis_view(code_input):
 def fetch_earnings_map(codes):
     """Fetches earnings dates in parallel for a list of codes."""
     earnings_map = {}
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         future_to_code = {executor.submit(get_next_earnings_date, code): code for code in codes}
         for future in future_to_code:
             code = future_to_code[future]
