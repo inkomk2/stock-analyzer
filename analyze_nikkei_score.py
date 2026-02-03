@@ -148,15 +148,30 @@ def analyze_stock(code):
 def get_next_earnings_date(code):
     try:
         stock = yf.Ticker(f"{code}.T")
-        cal = stock.calendar
-        # yfinance calendar handling
-        if cal is not None:
-            if isinstance(cal, dict):
+        
+        # 1. Try Calendar (standard)
+        try:
+            cal = stock.calendar
+            if cal is not None and isinstance(cal, dict):
                 dates = cal.get('Earnings Date', [])
                 if dates:
-                     # Format date if it's a datetime object
                      d = dates[0]
-                     return str(d).split(' ')[0] # Keep only YYYY-MM-DD
+                     return str(d).split(' ')[0]
+        except:
+            pass
+            
+        # 2. Try Info (fallback)
+        try:
+            info = stock.info
+            ts = info.get('earningsTimestamp')
+            if ts:
+                from datetime import datetime
+                # Convert timestamp (seconds) to date
+                dt = datetime.fromtimestamp(ts)
+                return dt.strftime('%Y-%m-%d')
+        except:
+            pass
+            
         return "-"
     except:
         return "-"

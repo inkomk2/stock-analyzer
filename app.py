@@ -23,7 +23,7 @@ from calculate_swing_strategy import get_strategy_metrics
 from concurrent.futures import ThreadPoolExecutor
 
 # Page Config
-st.set_page_config(page_title="Stock Analyzer created by Anthem", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Stock Analyzer", page_icon="📈", layout="wide")
 
 # Custom CSS for Mobile
 st.markdown("""
@@ -46,7 +46,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 Stock Analyzer created by Anthem")
+st.title("📈 Stock Analyzer")
 
 # --- Helper Function for Name Fetching ---
 @st.cache_data(ttl=86400) # Cache names for 24 hours
