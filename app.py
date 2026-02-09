@@ -159,6 +159,14 @@ def render_analysis_view(code_input):
             fig.update_layout(
                 xaxis_rangeslider_visible=False, 
                 height=400, 
+                distribute_legend=True, # Custom flag? No, standard plot settings
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
                 margin=dict(l=0, r=0, t=30, b=0),
                 template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)',
