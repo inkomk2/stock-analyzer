@@ -78,23 +78,44 @@ def render_analysis_view(code_input):
         name = get_stock_name(code_input)
         
         if metrics:
-            st.subheader(f"{name} ({code_input})")
+            # --- Fetch Score ---
+            param_score = "-"
+            try:
+                scores = load_ranking_data()
+                for row in scores:
+                    if row['Code'] == str(code_input):
+                        param_score = row['Score']
+                        break
+            except:
+                pass
             
-            # Display Key Metrics
-            col1, col2 = st.columns(2)
-            with col1:
+            # --- Header & Score ---
+            st.subheader(f"{name} ({code_input})")
+            st.metric("総合スコア", f"{param_score}点", help="トレンド・過熱感・リスクリワードから算出した、AIによる推奨度です。")
+            
+            # --- Metrics (Reordered) ---
+            # Row 1: Price & Entry
+            c1, c2 = st.columns(2)
+            with c1:
                 st.metric("現在値", f"¥{metrics['CurrentPrice']:,.0f}")
-                st.metric("利確目標", f"¥{metrics['TargetProfit']:,.0f}", delta=f"{metrics['TargetProfit']-metrics['CurrentPrice']:,.0f}")
-            with col2:
+            with c2:
                 st.metric("エントリー目安", f"¥{metrics['EntryPrice']:,.0f}", delta=f"{metrics['EntryPrice']-metrics['CurrentPrice']:,.0f}", delta_color="inverse")
+            
+            # Row 2: Target & Stop
+            c3, c4 = st.columns(2)
+            with c3:
+                st.metric("利確目標", f"¥{metrics['TargetProfit']:,.0f}", delta=f"{metrics['TargetProfit']-metrics['CurrentPrice']:,.0f}")
+            with c4:
                 st.metric("損切りライン", f"¥{metrics['StopLoss']:,.0f}", delta_color="off")
 
             # Strategy Badge
             st.info(f"戦略: **{metrics['DipDesc']}** | リスクリワード比: **{metrics['RR']:.2f}**")
             
             # --- CHART ---
-            st.subheader("6ヶ月チャート")
-            plot_data = metrics['PlotData']
+            st.subheader("3ヶ月チャート")
+            
+            # Slice to last 3 months (approx 75 records)
+            plot_data = metrics['PlotData'].tail(75)
             
             fig = go.Figure()
 
