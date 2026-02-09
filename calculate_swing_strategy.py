@@ -133,13 +133,24 @@ def get_strategy_metrics(code):
         "PlotData": plot_data
     }
 
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import requests
+
+# Fix for yfinance 401 Error
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
+
 def get_market_trend():
     """
     Analyzes the Nikkei 225 index (^N225) to determine the overall market trend.
     Returns a dictionary with trend status and color.
     """
     try:
-        ticker = yf.Ticker("^N225")
+        ticker = yf.Ticker("^N225", session=session)
         hist = ticker.history(period="3mo")
         
         if hist.empty:
