@@ -64,6 +64,49 @@ def analyze_stock(code):
         tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         atr = tr.rolling(14).mean().iloc[-1]
 
+        # --- EXTENDED TECHNICAL ANALYSIS ---
+        
+        # 1. MACD (12, 26, 9)
+        ema12 = hist['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = hist['Close'].ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        # hist_macd = macd - signal
+        macd_val = macd.iloc[-1]
+        signal_val = signal.iloc[-1]
+        
+        # 2. Bollinger Bands (20, 2sigma)
+        ma20 = hist['Close'].rolling(window=20).mean()
+        std20 = hist['Close'].rolling(window=20).std()
+        bb_upper = ma20 + (2 * std20)
+        bb_lower = ma20 - (2 * std20)
+        # bb_width = (bb_upper - bb_lower) / ma20
+        bb_pos = (current_price - bb_lower) / (bb_upper - bb_lower) # 0=Lower, 0.5=Mid, 1=Upper
+        
+        # 3. Ichimoku Cloud (9, 26, 52)
+        high9 = hist['High'].rolling(window=9).max()
+        low9 = hist['Low'].rolling(window=9).min()
+        tenkan = (high9 + low9) / 2
+        
+        high26 = hist['High'].rolling(window=26).max()
+        low26 = hist['Low'].rolling(window=26).min()
+        kijun = (high26 + low26) / 2
+        
+        senkou_a = ((tenkan + kijun) / 2).shift(26)
+        senkou_b = ((hist['High'].rolling(window=52).max() + hist['Low'].rolling(window=52).min()) / 2).shift(26)
+        
+        # Latest values
+        tenkan_val = tenkan.iloc[-1]
+        kijun_val = kijun.iloc[-1]
+        senkou_a_val = senkou_a.iloc[-1]
+        senkou_b_val = senkou_b.iloc[-1]
+        kumo_top = max(senkou_a_val, senkou_b_val)
+        kumo_bottom = min(senkou_a_val, senkou_b_val)
+
+        # 8. Historical Volatility (HV) - 20 days annualized
+        ln_ret = np.log(hist['Close'] / hist['Close'].shift(1))
+        hv = ln_ret.rolling(window=20).std().iloc[-1] * np.sqrt(250) * 100
+
         # --- NEW METRICS ---
         # 1. RSI (14)
         delta = hist['Close'].diff()
@@ -94,74 +137,41 @@ def analyze_stock(code):
             per = 0
             dividend_yield = 0
 
-        # --- SCORING LOGIC (Total Max ~100) ---
-        score = 0.0
-        details = []
+        # --- SCORING LOGIC (Enhanced) ---
+        score = 0
         
-        # 1. Trend (Max 35)
-        if current_price > ma25:
-            score += 10
-            if ma25 > ma75:
-                score += 10
-                if ma5 > ma25:
-                    score += 5
-                    details.append("上昇トレンド(強)")
-                else:
-                    details.append("上昇トレンド継続")
-            else:
-                details.append("短期上昇中")
+        # Trend (MA + Ichimoku + MACD)
+        if current_price > ma25: score += 10 # Base Trend
+        if ma5 > ma25: score += 5 # Strong Momentum
+        if current_price > kumo_top: score += 5 # Above Cloud
+        if tenkan_val > kijun_val: score += 5 # Tenkan/Kijun Cross
+        if macd_val > signal_val: score += 5 # MACD Bullish
+        if macd_val > 0: score += 5 # MACD Positive
         
-        # Slope (Max 10)
-        slope = (ma25 - ma25_prev) / ma25_prev * 100
-        if slope > 0:
-            score += min(10, slope * 10)
-
-        # 2. Pullback & RSI (Max 25)
-        # Deviation Score
-        deviation = (current_price - ma25) / ma25 * 100
-        if current_price > ma25 and -2.0 <= deviation <= 4.0:
-            # Closer to 0-1% deviation is better
-            dist = abs(deviation - 0.5)
-            pullback_score = max(0, 15 - (dist * 5))
-            score += pullback_score
-            if pullback_score > 10: details.append("押し目")
-
-        # RSI Score (Buy the dip in uptrend)
-        if 30 <= rsi <= 45:
-            score += 10
-            details.append(f"RSI売られすぎ({rsi:.0f})")
-        elif 45 < rsi <= 60:
-            score += 5
-        elif rsi >= 75:
-            score -= 5 # Overbought warning
-            details.append(f"RSI過熱気味({rsi:.0f})")
-
-        # 3. Volume (Max 10)
-        if vol_ratio >= 2.0:
-            score += 10
-            details.append("出来高急増")
-        elif vol_ratio >= 1.3:
-            score += 5
-
-        # 4. Fundamentals (Max 15)
-        # PBR (Value)
-        if 0 < pbr < 1.0:
-            score += 5
-            details.append(f"PBR割安({pbr:.2f})")
+        # Momentum & Volatility
+        if 30 <= rsi <= 50: score += 10 # Good entry zone
+        elif rsi > 75: score -= 5 # Overbought
         
-        # PER (Safety/Value)
-        if 0 < per < 15.0:
-            score += 5
-            
-        # Yield
-        if dividend_yield >= 3.5:
-            score += 5
-            details.append(f"高配当({dividend_yield:.1f}%)")
+        if score < 50 and bb_pos < 0.1: score += 10 # Bollinger bounce buy
+        
+        # Volume
+        if vol_ratio > 2.0: score += 5 # Big Volume
 
-        # 5. Risk / Reward (Max 15)
-        # ... (Existing RR logic)
+        # Fundamentals fallback
+        try:
+            info = ticker.info
+            pbr = info.get('priceToBook', 0)
+            per = info.get('trailingPE', 0)
+        except:
+             pbr, per = 0, 0
+
+        # Fundamental Score (Yield Removed)
+        if 0 < pbr < 1.0: score += 5
+        if 0 < per < 15: score += 5
+        
+        # Risk Reward (Re-integrated)
         recent_high = hist['High'].iloc[-60:].max()
-        StopLoss = ma25 - atr # Generic support stop
+        StopLoss = ma25 - atr 
         if current_price < ma25: StopLoss = current_price - 2*atr
         
         upside = recent_high - current_price
@@ -170,12 +180,80 @@ def analyze_stock(code):
         
         rr = upside / downside
         if rr >= 1.0:
+            score += min(15, rr * 5)
+        if rr >= 1.0:
             rr_score = min(15, rr * 5)
             score += rr_score
             if rr > 2.5:
                 details.append(f"R/R良({rr:.1f})")
         
         score = int(score)
+        
+        # Cap score
+        score = min(100, int(score))
+
+        # --- COMMENTARY GENERATION (Approx 20 lines) ---
+        commentary = []
+        commentary.append(f"【総合評価】 スコア: {score}点")
+        commentary.append(f"現在値: {current_price:,.0f}円 (前日比 {(current_price - hist['Close'].iloc[-2]):+,.0f}円)")
+        
+        # Trend
+        trend_desc = "上昇" if current_price > ma25 else "下落"
+        cloud_desc = "雲上" if current_price > kumo_top else ("雲下" if current_price < kumo_bottom else "雲中")
+        commentary.append(f"トレンド: {trend_desc}トレンド / 一目均衡表: {cloud_desc}")
+        
+        # MACD
+        macd_val = float(macd_val) if not np.isnan(macd_val) else 0.0
+        signal_val = float(signal_val) if not np.isnan(signal_val) else 0.0
+        macd_desc = "ゴールデンクロス中" if macd_val > signal_val else "デッドクロス中"
+        commentary.append(f"MACD: {macd_desc} (MACD:{macd_val:.1f} / Signal:{signal_val:.1f})")
+        
+        # Bollinger
+        bb_desc = "バンド内に収束"
+        if bb_pos > 1.0: bb_desc = "+2σ突破 (過熱感あり)"
+        elif bb_pos < 0.0: bb_desc = "-2σ割れ (売られすぎ)"
+        commentary.append(f"ボリンジャーバンド: {bb_desc}")
+        
+        # RSI & Volume
+        commentary.append(f"RSI(14): {rsi:.1f} ({'過熱圏' if rsi>70 else ('売られすぎ' if rsi<30 else '中立')})")
+        commentary.append(f"出来高: 通常比 {vol_ratio:.1f}倍 ({'急増' if vol_ratio>1.5 else '通常'})")
+        
+        # Fundamentals
+        commentary.append(f"PBR: {pbr:.2f}倍 / PER: {per:.1f}倍")
+        
+        # Strategy
+        commentary.append("")
+        commentary.append("【AI売買判断】")
+        if score >= 80:
+             commentary.append("評価: ★★★★★ (激アツ)")
+             commentary.append("テクニカル・ファンダメンタルズ共に死角なし。")
+             commentary.append("積極的なエントリーを推奨します。")
+        elif score >= 60:
+             commentary.append("評価: ★★★★☆ (買い推奨)")
+             commentary.append("上昇トレンドを維持しており、押し目買いの好機。")
+             commentary.append("MACDや一目均衡表も好転しています。")
+        elif score >= 40:
+             commentary.append("評価: ★★★☆☆ (様子見)")
+             commentary.append("悪くはありませんが、決定打に欠けます。")
+             commentary.append("トレンドが明確になるまで待機を推奨。")
+        else:
+             commentary.append("評価: ★★☆☆☆ (危険)")
+             commentary.append("下落トレンド、または過熱感が強すぎます。")
+             commentary.append("今は手出し無用です。")
+             
+        commentary.append("")
+        commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
+        commentary.append("※投資判断は自己責任で行ってください。")
+        
+        final_commentary = "\n".join(commentary)
+        
+        # Fix return dict to support both
+        short_reason = []
+        if score >= 80: short_reason.append("激アツ")
+        elif score >= 60: short_reason.append("買い推奨")
+        if vol_ratio > 1.5: short_reason.append("出来高急増")
+        if rsi < 30: short_reason.append("RSI底打ち")
+        if pbr < 1.0: short_reason.append("割安")
         
         return {
             "Code": code,
@@ -186,9 +264,10 @@ def analyze_stock(code):
             "RSI": rsi,
             "PBR": pbr,
             "PER": per,
-            "Yield": dividend_yield,
+            "Yield": 0,
             "RR": rr,
-            "Details": "、".join(details)
+            "Details": "、".join(short_reason) if short_reason else "特になし",
+            "AnalysisSummary": final_commentary
         }
     except Exception as e:
         return None
