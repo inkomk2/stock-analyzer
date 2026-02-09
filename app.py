@@ -17,7 +17,7 @@ sys.excepthook = handle_exception
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from analyze_nikkei_score import get_scored_stocks, get_next_earnings_date
+from analyze_nikkei_score import get_scored_stocks, get_next_earnings_date, analyze_stock
 from calculate_swing_strategy import get_strategy_metrics
 
 from concurrent.futures import ThreadPoolExecutor
@@ -70,6 +70,11 @@ def get_stock_name(code):
     except:
         return code
 
+# --- Helper for Score Fetching ---
+@st.cache_data(ttl=3600) # Cache for 1 hour
+def load_ranking_data():
+    return get_scored_stocks()
+
 # --- Helper Function for Analysis Rendering ---
 def render_analysis_view(code_input):
     """Renders the analysis view for a given code."""
@@ -88,6 +93,15 @@ def render_analysis_view(code_input):
                         break
             except:
                 pass
+            
+            # Fallback: Calculate on the fly if not found (e.g. non-Nikkei225)
+            if param_score == "-":
+                try:
+                    score_data = analyze_stock(code_input)
+                    if score_data:
+                        param_score = score_data['Score']
+                except:
+                    pass
             
             # --- Header & Score ---
             st.subheader(f"{name} ({code_input})")
@@ -202,12 +216,7 @@ with tab1:
             st.cache_data.clear()
             st.rerun()
             
-        @st.cache_data(ttl=3600) # Cache for 1 hour
-        def load_ranking_data():
-            progress_bar = st.progress(0)
-            data = get_scored_stocks(status_callback=progress_bar.progress)
-            progress_bar.empty()
-            return data
+
 
         try:
             with st.spinner("市場データを分析中..."):
