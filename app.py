@@ -313,107 +313,111 @@ with tab1:
         try:
             with st.spinner("市場データを分析中..."):
                 scores = load_ranking_data()
-                
-            # Fixed top 20
-            top_n = 20
             
-            displayed_scores = scores[:top_n]
-            target_codes = [row['Code'] for row in displayed_scores]
-            
-            with st.spinner("決算発表日を取得中..."):
-                earnings_map = fetch_earnings_map(target_codes)
-            
-            # Prepare dataframe for display
-            display_data = []
-            for row in displayed_scores:
-                name = get_stock_name(row['Code'])
-                earnings = earnings_map.get(row['Code'], '-')
-                
-                # Short earnings date for mobile (e.g. 2026-02-03 -> 02/03)
-                short_earnings = earnings
-                if len(earnings) >= 10:
-                    short_earnings = earnings[5:].replace('-', '/')
-                
-                display_data.append({
-                    '順位': displayed_scores.index(row) + 1, 
-                    'コード': row['Code'],
-                    '銘柄': f"{name} ({row['Code']})",
-                    'スコア': row['Score'],
-                    '現在値': f"¥{row['Price']:,.0f}", 
-                    '乖離率': f"{row['Deviation']:.1f}%",
-                    '決算発表': earnings,
-                    '決算日(短)': short_earnings, # For mobile
-                    'R/R': f"{row['RR']:.2f}",
-                    '選定理由': row['Details']
-                })
-                
-            df_display = pd.DataFrame(display_data)
-            
-            # Mobile Toggle
-            mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
-            
-            st.caption("👇 **行をタップすると詳細分析が表示されます**")
-            
-            if mobile_mode:
-                # Compact Column Config for Mobile
-                # Columns: Rank, Name(with Code), Score, Price, Earnings(Short)
-                event = st.dataframe(
-                    df_display[["順位", "銘柄", "スコア", "現在値", "決算日(短)"]], # Score moved before Price
-                    column_config={
-                        "順位": st.column_config.NumberColumn("#", width="small"), # Renamed to #
-                        "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                        "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"), 
-                        "現在値": st.column_config.TextColumn("株価", width="small"),
-                        "決算日(短)": st.column_config.TextColumn("決算", width="small"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    on_select="rerun",
-                    selection_mode="single-row"
-                )
+            if not scores:
+                st.warning("有効なデータが見つかりませんでした。しばらく待ってから「データを更新」ボタンを押してください。")
             else:
-                # Full Column Config
-                event = st.dataframe(
-                    df_display,
-                    column_config={
-                        "順位": st.column_config.NumberColumn("順位", width="small"),
-                        "コード": st.column_config.TextColumn("コード", width="small"),
-                        "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                        "スコア": st.column_config.ProgressColumn("スコア", min_value=0, max_value=100, format="%d点"),
-                        "決算発表": st.column_config.TextColumn("決算発表", width="medium"),
-                        "R/R": st.column_config.TextColumn("R/R", width="small"),
-                        "選定理由": st.column_config.TextColumn("選定理由", width="large"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    on_select="rerun",
-                    selection_mode="single-row"
-                )
-            
-            # Handle Selection
-            if len(event.selection.rows) > 0:
-                selected_index = event.selection.rows[0]
-                selected_row = df_display.iloc[selected_index]
-                target_code = selected_row['コード']
+                # Fixed top 20
+                top_n = 20
                 
-                # Set session state and rerun to show drill-down
-                st.session_state.ranking_target = target_code
-                st.rerun()
+                displayed_scores = scores[:top_n]
+                target_codes = [row['Code'] for row in displayed_scores]
+                
+                with st.spinner("決算発表日を取得中..."):
+                    earnings_map = fetch_earnings_map(target_codes)
+            
+                # Prepare dataframe for display
+                display_data = []
+                for row in displayed_scores:
+                    name = get_stock_name(row['Code'])
+                    earnings = earnings_map.get(row['Code'], '-')
+                    
+                    # Short earnings date for mobile (e.g. 2026-02-03 -> 02/03)
+                    short_earnings = earnings
+                    if len(earnings) >= 10:
+                        short_earnings = earnings[5:].replace('-', '/')
+                    
+                    display_data.append({
+                        '順位': displayed_scores.index(row) + 1, 
+                        'コード': row['Code'],
+                        '銘柄': f"{name} ({row['Code']})",
+                        'スコア': row['Score'],
+                        '現在値': f"¥{row['Price']:,.0f}", 
+                        '乖離率': f"{row['Deviation']:.1f}%",
+                        '決算発表': earnings,
+                        '決算日(短)': short_earnings, # For mobile
+                        'R/R': f"{row['RR']:.2f}",
+                        '選定理由': row['Details']
+                    })
+                    
+                df_display = pd.DataFrame(display_data)
+                
+                # Mobile Toggle
+                mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
+                
+                st.caption("👇 **行をタップすると詳細分析が表示されます**")
+                
+                if mobile_mode:
+                    # Compact Column Config for Mobile
+                    # Columns: Rank, Name(with Code), Score, Price, Earnings(Short)
+                    # '順位', '銘柄', 'スコア', '現在値', '決算日(短)' must exist in df_display columns
+                    event = st.dataframe(
+                        df_display[["順位", "銘柄", "スコア", "現在値", "決算日(短)"]], # Score moved before Price
+                        column_config={
+                            "順位": st.column_config.NumberColumn("#", width="small"), # Renamed to #
+                            "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
+                            "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"), 
+                            "現在値": st.column_config.TextColumn("株価", width="small"),
+                            "決算日(短)": st.column_config.TextColumn("決算", width="small"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                        on_select="rerun",
+                        selection_mode="single-row"
+                    )
+                else:
+                    # Full Column Config
+                    event = st.dataframe(
+                        df_display,
+                        column_config={
+                            "順位": st.column_config.NumberColumn("順位", width="small"),
+                            "コード": st.column_config.TextColumn("コード", width="small"),
+                            "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
+                            "スコア": st.column_config.ProgressColumn("スコア", min_value=0, max_value=100, format="%d点"),
+                            "決算発表": st.column_config.TextColumn("決算発表", width="medium"),
+                            "R/R": st.column_config.TextColumn("R/R", width="small"),
+                            "選定理由": st.column_config.TextColumn("選定理由", width="large"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                        on_select="rerun",
+                        selection_mode="single-row"
+                    )
+                
+                # Handle Selection
+                if len(event.selection.rows) > 0:
+                    selected_index = event.selection.rows[0]
+                    selected_row = df_display.iloc[selected_index]
+                    target_code = selected_row['コード']
+                    
+                    # Set session state and rerun to show drill-down
+                    st.session_state.ranking_target = target_code
+                    st.rerun()
 
-            st.caption("※ スコアはトレンド・過熱感・リスクリワードから算出されています。")
+                st.caption("※ スコアはトレンド・過熱感・リスクリワードから算出されています。")
+                    
+                with st.expander("ℹ️ スコアの見方・目安"):
+                    st.markdown("""
+                    - **80点以上 (激アツ)**: 
+                        上昇トレンド・押し目・リスクリワードの全てが完璧な状態。**強気にエントリー**を検討できる水準です。
+                    - **60点〜79点 (買い推奨)**: 
+                        多くの条件が揃っています。チャートを見てタイミングが合えばエントリー推奨。
+                    - **40点〜59点 (様子見)**: 
+                        悪くはないですが、何か一つ（トレンドが弱い、少し高値圏など）懸念があります。
+                    - **40点未満**: 
+                        現在はエントリーに適していません。
+                    """)
                 
-            with st.expander("ℹ️ スコアの見方・目安"):
-                st.markdown("""
-                - **80点以上 (激アツ)**: 
-                    上昇トレンド・押し目・リスクリワードの全てが完璧な状態。**強気にエントリー**を検討できる水準です。
-                - **60点〜79点 (買い推奨)**: 
-                    多くの条件が揃っています。チャートを見てタイミングが合えばエントリー推奨。
-                - **40点〜59点 (様子見)**: 
-                    悪くはないですが、何か一つ（トレンドが弱い、少し高値圏など）懸念があります。
-                - **40点未満**: 
-                    現在はエントリーに適していません。
-                """)
-            
         except Exception as e:
             st.error(f"データ読み込みエラー: {e}")
 
