@@ -84,9 +84,11 @@ def analyze_stock(code):
             per = info.get('trailingPE', 0)
             dividend_yield = info.get('dividendYield', 0)
             if dividend_yield is None: dividend_yield = 0
-            # Normalize yield to percentage (0.03 -> 3.0)
-            # yfinance returns 0.03 for 3% usually
-            dividend_yield *= 100
+            
+            # Normalize yield to percentage
+            # Some sources return 0.03, others 3.0. Assume < 0.3 (30%) is decimal.
+            if dividend_yield < 0.3: 
+                dividend_yield *= 100
         except:
             pbr = 0
             per = 0

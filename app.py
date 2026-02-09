@@ -244,10 +244,24 @@ def render_analysis_view(code_input):
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- REPORT ---
+            # --- AI ANALYSIS REPORT ---
             st.markdown("---")
-            st.subheader("📝 Analysis Report")
-            st.markdown(metrics['DetailedReport'])
+            st.subheader("📝 AI 総合分析レポート")
+            
+            analysis_text = ""
+            if advanced_stats and 'AnalysisSummary' in advanced_stats:
+                # Use the new comprehensive summary from analyze_stock
+                analysis_text = advanced_stats['AnalysisSummary']
+            else:
+                # Fallback to the old simpler report from get_strategy_metrics
+                analysis_text = metrics['DetailedReport']
+            
+            # Display inside a styled container for better readability
+            st.markdown(f"""
+            <div style="background-color: #2d3436; padding: 15px; border-radius: 10px; font-family: monospace; white-space: pre-wrap; line-height: 1.5;">
+            {analysis_text}
+            </div>
+            """, unsafe_allow_html=True)
             
         else:
             st.error(f"データを取得できませんでした。コードを確認してください。")
