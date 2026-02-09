@@ -19,10 +19,17 @@ tickers = [
 ]
 tickers = list(set(tickers)) # Deduplicate just in case
 
-def analyze_stock(code):
+def analyze_stock(code, hist_data=None, fundamentals=None):
     try:
-        ticker = yf.Ticker(f"{code}.T", session=session)
-        hist = ticker.history(period="6mo")
+        # If batch data is provided, use it
+        if hist_data is not None:
+            hist = hist_data
+            ticker = None
+        else:
+            # Single mode: Fetch data
+            ticker = yf.Ticker(f"{code}.T", session=session)
+            hist = ticker.history(period="6mo")
+
         if hist.empty:
             return None
             
@@ -99,22 +106,19 @@ def analyze_stock(code):
         current_vol = hist['Volume'].iloc[-1]
         vol_ratio = current_vol / vol_ma25 if vol_ma25 > 0 else 1.0
         
-        # 3. Fundamentals (Fetch only if trend is somewhat okay to save time? No, fetch all for now)
-        try:
-            info = ticker.info
-            pbr = info.get('priceToBook', 0)
-            per = info.get('trailingPE', 0)
-            dividend_yield = info.get('dividendYield', 0)
-            if dividend_yield is None: dividend_yield = 0
-            
-            # Normalize yield to percentage
-            # Some sources return 0.03, others 3.0. Assume < 0.3 (30%) is decimal.
-            if dividend_yield < 0.3: 
-                dividend_yield *= 100
-        except:
-            pbr = 0
-            per = 0
-            dividend_yield = 0
+        # 3. Fundamentals
+        pbr, per = 0, 0
+        if fundamentals:
+            pbr = fundamentals.get('pbr', 0)
+            per = fundamentals.get('per', 0)
+        elif ticker:
+            # Single mode fallback
+            try:
+                info = ticker.info
+                pbr = info.get('priceToBook', 0)
+                per = info.get('trailingPE', 0)
+            except:
+                 pbr, per = 0, 0
 
         # --- SCORING LOGIC (Enhanced) ---
         score = 0
@@ -287,20 +291,74 @@ def get_scored_stocks(status_callback=None):
     Analyzes all tickers and returns sorted results.
     status_callback: function(float) to report progress (0.0 to 1.0)
     """
+    import time
+    
     results = []
     
-    # Use ThreadPool to speed up
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(analyze_stock, code) for code in tickers]
-        total_futures = len(futures)
-        
-        for i, future in enumerate(futures):
-            res = future.result()
+    # Batch Request (Fast Speed)
+    # Tickers string: "7203.T 9984.T ..."
+    tickers_str = " ".join([f"{code}.T" for code in tickers])
+    
+    print("Batch downloading data...")
+    if status_callback: status_callback(0.1)
+    
+    # Download data for all tickers
+    # threads=True is default. group_by='ticker' organizes columns by ticker.
+    try:
+        data = yf.download(tickers_str, period="6mo", group_by='ticker', session=session, threads=True)
+    except Exception as e:
+        print(f"Batch download failed: {e}")
+        return []
+
+    if status_callback: status_callback(0.3)
+    
+    total_tickers = len(tickers)
+    
+    # Iterate and Analyze
+    for i, code in enumerate(tickers):
+        try:
+            # Extract DataFrame for this ticker from Batch Data
+            # yfinance returns MultiIndex if >1 ticker. 
+            # Columns: (Ticker, Open), (Ticker, High)... OR Top Level Ticker
+            ticker_key = f"{code}.T"
+            
+            # Check if data exists for this ticker
+            if ticker_key in data.columns.levels[0]:
+                hist = data[ticker_key].copy()
+            else:
+                # Handle case where yfinance might verify ticker but return no data, 
+                # or if structure is different (e.g. only 1 ticker in batch?)
+                # If only 1 ticker, columns are just Open, High... not MultiIndex
+                if len(tickers) == 1:
+                    hist = data
+                else:
+                    continue
+
+            # Check for NaN in recent data (delisted or error)
+            if hist['Close'].isna().iloc[-1]:
+                continue
+                
+            # Drop rows with all NaNs to be safe
+            hist.dropna(how='all', inplace=True)
+            
+            if len(hist) < 25: # Need at least 25 days
+                continue
+
+            # Analyze using pre-fetched data (No extra HTTP request)
+            # Fundamentals are skipped (None) for speed
+            res = analyze_stock(code, hist_data=hist)
+            
             if res:
                 results.append(res)
+                
+        except Exception as e:
+            # print(f"Error analyzing {code}: {e}")
+            pass
             
-            if status_callback:
-                status_callback((i + 1) / total_futures)
+        if status_callback:
+            # Progress from 0.3 to 1.0
+            p = 0.3 + (0.7 * (i + 1) / total_tickers)
+            status_callback(p)
                 
     # Sort by Score Descending
     results.sort(key=lambda x: x['Score'], reverse=True)
