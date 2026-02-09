@@ -133,6 +133,53 @@ def get_strategy_metrics(code):
         "PlotData": plot_data
     }
 
+def get_market_trend():
+    """
+    Analyzes the Nikkei 225 index (^N225) to determine the overall market trend.
+    Returns a dictionary with trend status and color.
+    """
+    try:
+        ticker = yf.Ticker("^N225")
+        hist = ticker.history(period="3mo")
+        
+        if hist.empty:
+            return {"status": "取得失敗", "color": "gray", "price": 0, "change": 0}
+            
+        current_price = hist['Close'].iloc[-1]
+        prev_price = hist['Close'].iloc[-2]
+        change = current_price - prev_price
+        
+        ma5 = hist['Close'].rolling(window=5).mean().iloc[-1]
+        ma25 = hist['Close'].rolling(window=25).mean().iloc[-1]
+        
+        # Trend Logic
+        if current_price > ma25:
+            if ma5 > ma25:
+                status = "上昇トレンド (強)"
+                color = "red" # Japanese style: Red = Up
+            else:
+                status = "上昇トレンド (調整局面)"
+                color = "orange"
+        elif current_price < ma25:
+            if ma5 < ma25:
+                status = "下落トレンド (弱)"
+                color = "green" # Japanese style: Green = Down
+            else:
+                status = "下落トレンド (反発局面)"
+                color = "blue"
+        else:
+            status = "トレンド不明"
+            color = "gray"
+            
+        return {
+            "status": status,
+            "color": color,
+            "price": current_price,
+            "change": change
+        }
+    except Exception as e:
+        return {"status": "エラー", "color": "gray", "price": 0, "change": 0}
+
 def calculate_strategy():
     targets = [
         "1925", # Daiwa House (Rank 1, Earnings 2/13)

@@ -63,18 +63,44 @@ def analyze_stock(code):
         low_close = np.abs(hist['Low'] - hist['Close'].shift())
         tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         atr = tr.rolling(14).mean().iloc[-1]
+
+        # --- NEW METRICS ---
+        # 1. RSI (14)
+        delta = hist['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs)).iloc[-1]
         
-        # Scoring Logic (Max 100, Fine-grained)
+        # 2. Volume Spike
+        vol_ma25 = hist['Volume'].rolling(window=25).mean().iloc[-1]
+        current_vol = hist['Volume'].iloc[-1]
+        vol_ratio = current_vol / vol_ma25 if vol_ma25 > 0 else 1.0
+        
+        # 3. Fundamentals (Fetch only if trend is somewhat okay to save time? No, fetch all for now)
+        try:
+            info = ticker.info
+            pbr = info.get('priceToBook', 0)
+            per = info.get('trailingPE', 0)
+            dividend_yield = info.get('dividendYield', 0)
+            if dividend_yield is None: dividend_yield = 0
+            # Normalize yield to percentage (0.03 -> 3.0)
+            # yfinance returns 0.03 for 3% usually
+            dividend_yield *= 100
+        except:
+            pbr = 0
+            per = 0
+            dividend_yield = 0
+
+        # --- SCORING LOGIC (Total Max ~100) ---
         score = 0.0
         details = []
         
-        # 1. Trend Strength (Max 40)
-        # Base trend score
+        # 1. Trend (Max 35)
         if current_price > ma25:
             score += 10
             if ma25 > ma75:
                 score += 10
-                # Perfect Order Bonus
                 if ma5 > ma25:
                     score += 5
                     details.append("上昇トレンド(強)")
@@ -82,55 +108,71 @@ def analyze_stock(code):
                     details.append("上昇トレンド継続")
             else:
                 details.append("短期上昇中")
-                
-        # Slope check (Max 15)
-        # Calculate slope as % change of MA25 over 5 days
+        
+        # Slope (Max 10)
         slope = (ma25 - ma25_prev) / ma25_prev * 100
         if slope > 0:
-            # e.g. 0.5% slope = 5 pts, 1.0% = 10 pts, max 15
-            slope_score = min(15, slope * 10)
-            score += slope_score
-        
-        # 2. Buying Opportunity (Pullback) (Max 30)
-        # Ideal deviation is around +1% to +3% (Strong trend pullback)
-        # Or -1% to +1% (Deep pullback)
-        deviation = (current_price - ma25) / ma25 * 100
-        
-        pullback_score = 0
-        if -3.0 <= deviation <= 5.0:
-            # Create a bell curve peak around 1.0%
-            dist = abs(deviation - 1.0)
-            # Max 30 points if deviation is exactly 1.0%
-            # Lose 5 points for every 1% distance
-            pullback_score = max(0, 30 - (dist * 7))
-            
-            if pullback_score > 20:
-                details.append("絶好の押し目")
-            elif pullback_score > 10:
-                details.append("買いゾーン")
-        
-        score += pullback_score
+            score += min(10, slope * 10)
 
-        # 3. Risk / Reward Potential (Max 30)
-        # Recent High
+        # 2. Pullback & RSI (Max 25)
+        # Deviation Score
+        deviation = (current_price - ma25) / ma25 * 100
+        if current_price > ma25 and -2.0 <= deviation <= 4.0:
+            # Closer to 0-1% deviation is better
+            dist = abs(deviation - 0.5)
+            pullback_score = max(0, 15 - (dist * 5))
+            score += pullback_score
+            if pullback_score > 10: details.append("押し目")
+
+        # RSI Score (Buy the dip in uptrend)
+        if 30 <= rsi <= 45:
+            score += 10
+            details.append(f"RSI売られすぎ({rsi:.0f})")
+        elif 45 < rsi <= 60:
+            score += 5
+        elif rsi >= 75:
+            score -= 5 # Overbought warning
+            details.append(f"RSI過熱気味({rsi:.0f})")
+
+        # 3. Volume (Max 10)
+        if vol_ratio >= 2.0:
+            score += 10
+            details.append("出来高急増")
+        elif vol_ratio >= 1.3:
+            score += 5
+
+        # 4. Fundamentals (Max 15)
+        # PBR (Value)
+        if 0 < pbr < 1.0:
+            score += 5
+            details.append(f"PBR割安({pbr:.2f})")
+        
+        # PER (Safety/Value)
+        if 0 < per < 15.0:
+            score += 5
+            
+        # Yield
+        if dividend_yield >= 3.5:
+            score += 5
+            details.append(f"高配当({dividend_yield:.1f}%)")
+
+        # 5. Risk / Reward (Max 15)
+        # ... (Existing RR logic)
         recent_high = hist['High'].iloc[-60:].max()
         StopLoss = ma25 - atr # Generic support stop
         if current_price < ma25: StopLoss = current_price - 2*atr
         
         upside = recent_high - current_price
         downside = current_price - StopLoss
-        if downside <= 0: downside = 0.1 # Prevent div by zero
+        if downside <= 0: downside = 0.1 
         
         rr = upside / downside
-        
-        # Max 30 points. RR 3.0 = 30 pts. RR 1.0 = 5 pts.
         if rr >= 1.0:
-            rr_score = min(30, rr * 8)
+            rr_score = min(15, rr * 5)
             score += rr_score
             if rr > 2.5:
-                details.append(f"R/R優秀({rr:.1f})")
+                details.append(f"R/R良({rr:.1f})")
         
-        # Final integer score
         score = int(score)
         
         return {
@@ -139,6 +181,10 @@ def analyze_stock(code):
             "Score": score,
             "MA25": ma25,
             "Deviation": deviation,
+            "RSI": rsi,
+            "PBR": pbr,
+            "PER": per,
+            "Yield": dividend_yield,
             "RR": rr,
             "Details": "、".join(details)
         }

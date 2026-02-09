@@ -18,7 +18,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
 from analyze_nikkei_score import get_scored_stocks, get_next_earnings_date, analyze_stock
-from calculate_swing_strategy import get_strategy_metrics
+from calculate_swing_strategy import get_strategy_metrics, get_market_trend
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -47,6 +47,35 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📈 Stock Analyzer")
+
+# --- Market Overview ---
+try:
+    with st.spinner("市場環境を確認中..."):
+        market = get_market_trend()
+        
+    m_color = market['color']
+    m_status = market['status']
+    m_price = market['price']
+    m_change = market['change']
+    
+    # Custom HTML Banner
+    if m_status != "エラー":
+        banner_color = {
+            "red": "#ff4b4b",
+            "orange": "#ff9f43",
+            "green": "#00b894",
+            "blue": "#54a0ff",
+            "gray": "#636e72"
+        }.get(m_color, "#636e72")
+        
+        st.markdown(f"""
+        <div style="background-color: {banner_color}; padding: 10px; border-radius: 5px; margin-bottom: 20px; color: white;">
+            <h3 style="margin: 0; padding: 0;">日経平均: {m_price:,.0f}円 ({m_change:+,.0f})</h3>
+            <p style="margin: 0; padding: 0; font-weight: bold;">市場環境: {m_status}</p>
+        </div>
+        """, unsafe_allow_html=True)
+except:
+    pass
 
 # --- Helper Function for Name Fetching ---
 @st.cache_data(ttl=86400) # Cache names for 24 hours
@@ -121,6 +150,48 @@ def render_analysis_view(code_input):
                 st.metric("利確目標", f"¥{metrics['TargetProfit']:,.0f}", delta=f"{metrics['TargetProfit']-metrics['CurrentPrice']:,.0f}")
             with c4:
                 st.metric("損切りライン", f"¥{metrics['StopLoss']:,.0f}", delta_color="off")
+
+            # Row 3: Advanced Metrics (RSI, PBR, etc)
+            # Fetch these from score_data (since metrics from calculate_swing_strategy doesn't have them by default)
+            # We need to rely on param_score or re-fetch.
+            # actually render_analysis_view calls get_strategy_metrics, but score logic is in analyze_stock.
+            # Ideally get_strategy_metrics should also return these, or we merge them.
+            # Simplified: Use analyze_stock to get these stats for display if available
+            
+            advanced_stats = {}
+            try:
+                 # Check if we have cached row data
+                 # param_score is just the score number. We need the full row.
+                scores = load_ranking_data()
+                for row in scores:
+                    if row['Code'] == str(code_input):
+                        advanced_stats = row
+                        break
+                
+                # If not in cache, fetch on the fly
+                if not advanced_stats:
+                     from analyze_nikkei_score import analyze_stock
+                     advanced_stats = analyze_stock(code_input)
+            except:
+                pass
+
+            if advanced_stats:
+                st.markdown("---")
+                st.caption("**指標データ** (AI分析)")
+                ac1, ac2, ac3, ac4 = st.columns(4)
+                with ac1:
+                    rsi_val = advanced_stats.get('RSI', 0)
+                    st.metric("RSI(14)", f"{rsi_val:.1f}")
+                with ac2:
+                    pbr_val = advanced_stats.get('PBR', 0)
+                    st.metric("PBR", f"{pbr_val:.2f}倍")
+                with ac3:
+                    per_val = advanced_stats.get('PER', 0)
+                    st.metric("PER", f"{per_val:.1f}倍")
+                with ac4:
+                    div_val = advanced_stats.get('Yield', 0)
+                    st.metric("利回り", f"{div_val:.2f}%")
+
 
             # Strategy Badge
             st.info(f"戦略: **{metrics['DipDesc']}** | リスクリワード比: **{metrics['RR']:.2f}**")
