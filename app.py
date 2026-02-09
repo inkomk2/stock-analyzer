@@ -159,7 +159,6 @@ def render_analysis_view(code_input):
             fig.update_layout(
                 xaxis_rangeslider_visible=False, 
                 height=400, 
-                distribute_legend=True, # Custom flag? No, standard plot settings
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
