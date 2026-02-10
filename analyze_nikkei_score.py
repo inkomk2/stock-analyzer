@@ -157,32 +157,36 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             per = fundamentals.get('per', per)
 
         # --- SCORING LOGIC (Enhanced V2) ---
-        score = 0
+        score_trend = 0
+        score_mom = 0
+        score_vol = 0
+        score_fund = 0
+        score_rr = 0
         
         # A. Trend (Max 40)
-        if current_price > ma25: score += 10
-        if ma25 > ma25_prev: score += 5      # Rising Slope
-        if ma5 > ma25: score += 5            # Golden Cross State
-        if current_price > kumo_top: score += 5
-        if tenkan_val > kijun_val: score += 5
-        if macd_val > signal_val: score += 5
-        if macd_val > 0: score += 5
+        if current_price > ma25: score_trend += 10
+        if ma25 > ma25_prev: score_trend += 5      # Rising Slope
+        if ma5 > ma25: score_trend += 5            # Golden Cross State
+        if current_price > kumo_top: score_trend += 5
+        if tenkan_val > kijun_val: score_trend += 5
+        if macd_val > signal_val: score_trend += 5
+        if macd_val > 0: score_trend += 5
         
         # B. Momentum & Volatility (Max 20)
-        if 40 <= rsi <= 70: score += 10      # Healthy Trend
-        elif 30 <= rsi < 40: score += 5      # Recovering
-        elif rsi > 80: score -= 5            # Overheated
+        if 40 <= rsi <= 70: score_mom += 10      # Healthy Trend
+        elif 30 <= rsi < 40: score_mom += 5      # Recovering
+        elif rsi > 80: score_mom -= 5            # Overheated
         
-        # Reversal Bonus
-        if score < 40 and bb_pos < 0.0: score += 10 # Oversold at BB Lower
+        # Reversal Bonus for Momentum
+        if (score_trend + score_mom) < 40 and bb_pos < 0.0: score_mom += 10 
         
         # C. Volume (Max 10)
-        if vol_ratio > 1.5: score += 10
-        elif vol_ratio > 1.2: score += 5
+        if vol_ratio > 1.5: score_vol += 10
+        elif vol_ratio > 1.2: score_vol += 5
 
-        # D. Fundamental Score (Max 20) - Requested by User
-        if 0 < pbr < 1.0: score += 10
-        if 0 < per < 15: score += 10
+        # D. Fundamental Score (Max 20)
+        if 0 < pbr < 1.0: score_fund += 10
+        if 0 < per < 15: score_fund += 10
         
         # E. Risk Reward (Max 10)
         try:
@@ -197,12 +201,13 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             rr = upside / downside
             if rr >= 1.0:
                 rr_score = min(10, rr * 3) # Max 10
-                score += rr_score
+                score_rr += rr_score
         except:
             rr = 0.0
 
         # Cap score
-        score = min(100, int(score))
+        total_score = score_trend + score_mom + score_vol + score_fund + score_rr
+        score = min(100, int(total_score))
 
         # --- COMMENTARY GENERATION ---
         commentary = []
@@ -255,7 +260,14 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             "Yield": 0,
             "RR": rr,
             "Details": "、".join(short_reason) if short_reason else "特になし",
-            "AnalysisSummary": final_commentary
+            "AnalysisSummary": final_commentary,
+            "ScoreDetail": {
+                "Trend": int(score_trend),
+                "Momentum": int(score_mom),
+                "Volume": int(score_vol),
+                "Fundamentals": int(score_fund),
+                "RiskReward": int(score_rr)
+            }
         }
         
     except Exception as e:

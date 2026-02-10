@@ -112,31 +112,81 @@ def render_analysis_view(code_input):
         name = get_stock_name(code_input)
         
         if metrics:
-            # --- Fetch Score ---
-            param_score = "-"
+            # --- Fetch Analysis Data (Unified) ---
+            advanced_stats = {}
+            # 1. Try Cache
             try:
                 scores = load_ranking_data()
                 for row in scores:
                     if row['Code'] == str(code_input):
-                        param_score = row['Score']
+                        advanced_stats = row
                         break
-            except:
-                pass
+            except: pass
             
-            # Fallback: Calculate on the fly if not found (e.g. non-Nikkei225)
-            if param_score == "-":
+            # 2. Try Fresh Analysis
+            if not advanced_stats:
                 try:
-                    score_data = analyze_stock(code_input)
-                    if score_data:
-                        param_score = score_data['Score']
-                except:
-                    pass
+                    from analyze_nikkei_score import analyze_stock
+                    advanced_stats = analyze_stock(code_input)
+                except: pass
+            
+            param_score = advanced_stats.get('Score', '-') if advanced_stats else "-"
             
             # --- Header & Score ---
             st.subheader(f"{name} ({code_input})")
-            st.metric("総合スコア", f"{param_score}点", help="トレンド・過熱感・リスクリワードから算出した、AIによる推奨度です。")
             
-            # --- Metrics (Reordered) ---
+            # Score & Breakdown Column
+            s1, s2 = st.columns([1, 2])
+            with s1:
+                st.metric("総合スコア", f"{param_score}点", help="トレンド・過熱感・リスクリワードから算出した、AIによる推奨度です。")
+            
+            # --- SCORE BREAKDOWN (Radar Chart) ---
+            if advanced_stats and 'ScoreDetail' in advanced_stats:
+                with s2:
+                    details = advanced_stats['ScoreDetail']
+                    
+                    # Normalize for Chart (Max points based on logic)
+                    categories = ['トレンド', 'モメンタム', 'ファンダ', '出来高', 'R/R']
+                    # Max points: Trend=40, Mom=20, Fund=20, Vol=10, RR=10
+                    values = [
+                        details.get('Trend', 0),
+                        details.get('Momentum', 0),
+                        details.get('Fundamentals', 0),
+                        details.get('Volume', 0),
+                        details.get('RiskReward', 0)
+                    ]
+                    max_values = [40, 20, 20, 10, 10]
+                    
+                    # Normalize to 100 scale for chart
+                    normalized = [min(100, v/m*100) if m>0 else 0 for v, m in zip(values, max_values)]
+                    
+                    # Close the loop
+                    cat_plot = categories + [categories[0]]
+                    val_plot = normalized + [normalized[0]]
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatterpolar(
+                        r=val_plot,
+                        theta=cat_plot,
+                        fill='toself',
+                        name=name,
+                        hoverinfo='text',
+                        text=[f"{v}/{m}" for v, m in zip(values+values[:1], max_values+max_values[:1])]
+                    ))
+                    fig.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(size=8))
+                        ),
+                        margin=dict(l=20, r=20, t=10, b=10),
+                        height=180,
+                        showlegend=False,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="white")
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="radar_chart")
+            
+            # --- Metrics (Row 1) ---
             # Row 1: Price & Entry
             c1, c2 = st.columns(2)
             with c1:
@@ -151,33 +201,10 @@ def render_analysis_view(code_input):
             with c4:
                 st.metric("損切りライン", f"¥{metrics['StopLoss']:,.0f}", delta_color="off")
 
-            # Row 3: Advanced Metrics (RSI, PBR, etc)
-            # Fetch these from score_data (since metrics from calculate_swing_strategy doesn't have them by default)
-            # We need to rely on param_score or re-fetch.
-            # actually render_analysis_view calls get_strategy_metrics, but score logic is in analyze_stock.
-            # Ideally get_strategy_metrics should also return these, or we merge them.
-            # Simplified: Use analyze_stock to get these stats for display if available
-            
-            advanced_stats = {}
-            try:
-                 # Check if we have cached row data
-                 # param_score is just the score number. We need the full row.
-                scores = load_ranking_data()
-                for row in scores:
-                    if row['Code'] == str(code_input):
-                        advanced_stats = row
-                        break
-                
-                # If not in cache, fetch on the fly
-                if not advanced_stats:
-                     from analyze_nikkei_score import analyze_stock
-                     advanced_stats = analyze_stock(code_input)
-            except:
-                pass
-
+            # Row 3: Advanced Stats
             if advanced_stats:
                 st.markdown("---")
-                st.caption("**指標データ** (AI分析)")
+                # st.caption("**指標データ** (AI分析)") # Optional
                 ac1, ac2, ac3, ac4 = st.columns(4)
                 with ac1:
                     rsi_val = advanced_stats.get('RSI', 0)
@@ -189,8 +216,8 @@ def render_analysis_view(code_input):
                     per_val = advanced_stats.get('PER', 0)
                     st.metric("PER", f"{per_val:.1f}倍")
                 with ac4:
-                    div_val = advanced_stats.get('Yield', 0)
-                    st.metric("利回り", f"{div_val:.2f}%")
+                    score_rr = advanced_stats.get('RR', 0)
+                    st.metric("R/R比", f"{score_rr:.2f}")
 
 
             # Strategy Badge
