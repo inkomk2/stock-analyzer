@@ -43,8 +43,13 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             # Single mode: Fetch data
             ticker = yf.Ticker(f"{code}.T")
             hist = ticker.history(period="6mo")
-
+            
         if hist.empty:
+            try:
+                import streamlit as st
+                st.write(f"DEBUG: {code} - History Empty. Info: {ticker.info if ticker else 'No Ticker'}")
+            except:
+                print(f"DEBUG: {code} - History Empty")
             return None
             
         current_price = hist['Close'].iloc[-1]
@@ -324,18 +329,21 @@ def get_scored_stocks(status_callback=None):
     
     total_tickers = len(tickers)
     
+    import time
+    
     for i, code in enumerate(tickers):
         with st.container(): # Use container to isolate potential output errors
             try:
                 status_text.text(f"Analyzing {code} ({i+1}/{total_tickers})...")
-                # print(f"[{i+1}/{total_tickers}] Analyzing {code}...")
+                
+                # Sleep to be polite to API
+                time.sleep(1.5)
                 
                 # Analyze synchronously
                 res = analyze_stock(code)
                 
                 if res:
                     results.append(res)
-                    # st.write(f" -> Success: {code} Score={res['Score']}")
                 else:
                     st.write(f" -> Failed: {code} (No result)")
                     
