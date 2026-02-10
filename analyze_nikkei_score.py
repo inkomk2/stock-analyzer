@@ -289,91 +289,71 @@ def get_scored_stocks(status_callback=None):
     
     results = []
     
-    # Batch Request (Fast Speed)
-    # Tickers string: "7203.T 9984.T ..."
-    tickers_str = " ".join([f"{code}.T" for code in tickers])
+    # Chunked Batch Request (Reliability)
+    # Split into chunks of 50 to avoid massive request blocking
+    chunk_size = 50
+    ticker_chunks = [tickers[i:i + chunk_size] for i in range(0, len(tickers), chunk_size)]
     
-    # Download data for all tickers
-    # threads=True is default. group_by='ticker' organizes columns by ticker.
-    try:
-        data = yf.download(tickers_str, period="6mo", group_by='ticker', threads=True)
-    except Exception as e:
-        print(f"Batch download failed: {e}")
-        return []
-
-    if status_callback: status_callback(0.3)
+    print(f"Processing {len(ticker_chunks)} chunks...")
     
-    total_tickers = len(tickers)
+    all_data_frames = []
     
-    # Iterate and Analyze
-    for i, code in enumerate(tickers):
+    for i, chunk in enumerate(ticker_chunks):
+        chunk_str = " ".join([f"{code}.T" for code in chunk])
+        print(f"Downloading chunk {i+1}/{len(ticker_chunks)}...")
+        
         try:
-            # Extract DataFrame for this ticker from Batch Data
-            # yfinance returns MultiIndex if >1 ticker. 
-            # Columns: (Ticker, Open), (Ticker, High)... OR Top Level Ticker
-            ticker_key = f"{code}.T"
+            # Download chunk
+            # threads=True is default. group_by='ticker'
+            data = yf.download(chunk_str, period="6mo", group_by='ticker', threads=True)
             
-            # Check if data exists for this ticker
-            if isinstance(data.columns, pd.MultiIndex):
-                if ticker_key in data.columns.levels[0]:
-                    hist = data[ticker_key].copy()
-                else:
-                    continue
-            else:
-                # If not MultiIndex, it might be a single ticker result
-                # In yfinance, if we ask for multiple but only 1 returns, it gives single index
-                # We need to verify if this single result corresponds to the current ticker loop
+            if not data.empty:
+                # Store data or process immediately
+                # For simplicity, we'll iterate the chunk immediately
                 
-                # If we asked for 225 tickers, and got single index, it means either:
-                # 1. only 1 was valid (unlikely for 225)
-                # 2. yfinance failed to group?
-                
-                # Let's assume if it is not MultiIndex, it MIGHT be the data if len(tickers) == 1
-                # But here len(tickers) is ~225. 
-                # If yfinance returns single index for multiple tickers request, it's usually an error or only 1 valid.
-                # However, sometimes if all columns are unique (e.g. only Close?), no.
-                
-                # Check if 'Close' is in columns. 
-                if 'Close' in data.columns:
-                     # This is a single ticker df. Which one?
-                     # We can't know for sure if we requested multiple.
-                     # But maybe we can check if it's the ONLY ticker?
-                     if len(tickers) == 1:
-                         hist = data.copy()
-                     else:
-                        # Fallback: Try to access via swaplevel if something is wrong, or just skip
-                        # Actually, yfinance might return keys as columns if group_by='ticker' failed?
-                        continue
-                else:
-                     continue
+                for code in chunk:
+                    try:
+                        ticker_key = f"{code}.T"
+                        hist = None
+                        
+                        # Handle MultiIndex vs Single Index
+                        if isinstance(data.columns, pd.MultiIndex):
+                            if ticker_key in data.columns.levels[0]:
+                                hist = data[ticker_key].copy()
+                        else:
+                            # If single ticker in chunk (last chunk?)
+                            if len(chunk) == 1 and 'Close' in data.columns:
+                                hist = data.copy()
+                            elif ticker_key in data.columns: # Rare case
+                                hist = data[ticker_key].copy() # Impossible if not MultiIndex usually
+                        
+                        if hist is None or hist.empty:
+                            continue
 
+                        # Check for NaN in recent data
+                        if hist['Close'].isna().iloc[-1]:
+                            continue
+                        
+                        hist.dropna(how='all', inplace=True)
+                        if len(hist) < 25: continue
 
-            # Check for NaN in recent data (delisted or error)
-            if hist['Close'].isna().iloc[-1]:
-                continue
-                
-            # Drop rows with all NaNs to be safe
-            hist.dropna(how='all', inplace=True)
+                        res = analyze_stock(code, hist_data=hist)
+                        if res: results.append(res)
+                            
+                    except Exception as e:
+                        # print(f"Error {code}: {e}")
+                        pass
             
-            if len(hist) < 25: # Need at least 25 days
-                continue
-
-            # Analyze using pre-fetched data (No extra HTTP request)
-            # Fundamentals are skipped (None) for speed
-            res = analyze_stock(code, hist_data=hist)
-            
-            if res:
-                results.append(res)
+            # Sleep between chunks to be nice
+            if i < len(ticker_chunks) - 1:
+                time.sleep(2.0)
                 
         except Exception as e:
-            # print(f"Error analyzing {code}: {e}")
-            pass
+            print(f"Chunk {i+1} failed: {e}")
             
-        if status_callback:
-            # Progress from 0.3 to 1.0
-            p = 0.3 + (0.7 * (i + 1) / total_tickers)
-            status_callback(p)
-                
+        if status_callback: 
+            status_callback((i + 1) / len(ticker_chunks))
+            
     # Sort by Score Descending
     results.sort(key=lambda x: x['Score'], reverse=True)
     return results
