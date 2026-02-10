@@ -59,23 +59,29 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             hist = ticker.history(period="6mo")
             
         safe_import_st().write(f"DEBUG: Fetched {code}. Shape: {hist.shape}")
+        safe_import_st().write(f"DEBUG: Columns: {hist.columns}")
+        safe_import_st().write(f"DEBUG: Head: {hist.head(1)}")
 
         if hist.empty:
             safe_import_st().error(f"DEBUG: {code} - History is EMPTY.")
             return None
             
-        current_price = hist['Close'].iloc[-1]
+        try:
+            current_price = hist['Close'].iloc[-1]
+            safe_import_st().write(f"DEBUG: Current Price: {current_price}")
+        except Exception as e:
+            safe_import_st().error(f"CRITICAL ERROR getting price for {code}: {e}")
+            return None
         
         # ... (rest of function) ...
         
     except Exception as e:
+        safe_import_st().error(f"DEBUG: Checkpoint Violation in {code}: {e}")
         try:
-            import streamlit as st
-            st.error(f"DEBUG: Error in analyze_stock({code}): {e}")
             import traceback
-            st.text(traceback.format_exc())
+            safe_import_st().text(traceback.format_exc())
         except:
-            print(f"Error analyzing stock {code}: {e}")
+            pass
         return None
         
         safe_import_st().write(f"DEBUG: {code} - Checkpoint A (MA)")
