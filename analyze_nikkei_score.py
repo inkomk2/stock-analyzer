@@ -163,21 +163,23 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         score_fund = 0
         score_rr = 0
         
-        # A. Trend (Max 50) - Weight Increased
+        # A. Trend (Max 50) - Granular
         if current_price > ma25: score_trend += 10
-        if ma25 > ma25_prev: score_trend += 10       # Rising Slope (Strong Trend)
-        if ma5 > ma25: score_trend += 10             # Short-term Upward (GC)
-        if current_price > kumo_top: score_trend += 5
-        if tenkan_val > kijun_val: score_trend += 5
-        if macd_val > signal_val: score_trend += 5
-        if macd_val > 0: score_trend += 5
+        if ma25 > ma25_prev: score_trend += 10
+        if ma5 > ma25: score_trend += 10
+        if current_price > kumo_top: score_trend += 4      # Cloud Break
+        if tenkan_val > kijun_val: score_trend += 3        # Ichimoku Signal
+        if macd_val > signal_val: score_trend += 3         # MACD GC
+        if macd_val > 0: score_trend += 3                  # MACD Positive
+        if current_price > ma75: score_trend += 4          # Long Trend
+        if current_price > ma5: score_trend += 3           # Short Trend
         
-        # B. Momentum (Max 20) - Logic Changed
-        if 50 <= rsi <= 75: score_mom += 20          # Sweet Spot for Swing
-        elif 40 <= rsi < 50: score_mom += 10         # Neutral/Stable
-        elif rsi > 80: score_mom -= 5                # Overheated
+        # B. Momentum (Max 20) - Granular
+        if 50 <= rsi <= 75: score_mom += 18
+        elif 40 <= rsi < 50: score_mom += 8
+        elif rsi > 80: score_mom -= 7
         
-        # C. Volume (Max 10)
+        # C. Volume (Max 10) - Dynamic
         # Check for Panic Selling (High Volume + Sharp Drop)
         daily_ret = 0.0
         try:
@@ -186,39 +188,38 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         except:
             pass
 
-        if vol_ratio > 1.5:
-            if daily_ret < -0.03: # Dropped > 3% with high volume = Panic
-                score_vol -= 10
-            else:
-                score_vol += 10
-        elif vol_ratio > 1.2 and daily_ret > -0.02:
-            score_vol += 5
+        if daily_ret < -0.03 and vol_ratio > 1.5:
+             score_vol -= 10 # Panic Penalty
+        else:
+             # Reward volume linearly
+             vol_points = int(vol_ratio * 5)
+             score_vol = min(10, vol_points)
+             if vol_ratio > 1.0 and score_vol < 3: score_vol = 3 # Min points for positive volume
 
-        # D. Fundamental Score (Max 10) - Reduced for Swing focus
-        if 0 < pbr < 1.5: score_fund += 5
-        if 0 < per < 25: score_fund += 5
+        # D. Fundamental (Max 10) - Steps
+        if 0 < pbr < 1.0: score_fund += 3
+        if 0 < pbr < 1.2: score_fund += 2
         
-        # E. Risk Reward (Max 10)
+        if 0 < per < 15: score_fund += 3
+        if 0 < per < 25: score_fund += 2
+        
+        # E. Risk Reward (Max 10) - Dynamic
         try:
             recent_high = hist['High'].iloc[-60:].max()
             StopLoss = ma25 - atr 
             if current_price < ma25: StopLoss = current_price - 2*atr
             
             upside = recent_high - current_price
-            # If at New High (upside <= 0), assume continued trend potential
-            if upside <= 0:
-                upside = 3 * atr
+            if upside <= 0: upside = 3 * atr
             
             downside = current_price - StopLoss
-            if downside <= 0: downside = 0.1 # Should not happen if StopLoss < Current
+            if downside <= 0: downside = 0.1 
             
             rr = upside / downside
             
-            # Score Calculation
-            if rr >= 3.0: score_rr += 10
-            elif rr >= 2.0: score_rr += 7
-            elif rr >= 1.5: score_rr += 5
-            elif rr >= 1.0: score_rr += 3
+            # Linear score: RR 1.0 -> 4pts, 2.0 -> 8pts, 2.5+ -> 10pts
+            rr_points = int(rr * 4)
+            score_rr = min(10, rr_points)
             
         except:
             rr = 0.0
