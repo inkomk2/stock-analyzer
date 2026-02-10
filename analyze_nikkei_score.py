@@ -140,35 +140,51 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
 
         # 3. Fundamentals
         pbr, per = 0, 0
+        
+        # Try to fetch from ticker.info if available (needed for partial parallel mode)
+        if ticker:
+            try:
+                # Use fast_info if possible for price, but PBR/PER needs info
+                # To avoid blocking too long, we wrap in try
+                info = ticker.info
+                pbr = info.get('priceToBook', 0) or 0
+                per = info.get('trailingPE', 0) or 0
+            except:
+                pass
+        
         if fundamentals:
-            pbr = fundamentals.get('pbr', 0)
-            per = fundamentals.get('per', 0)
+            pbr = fundamentals.get('pbr', pbr)
+            per = fundamentals.get('per', per)
 
-        # --- SCORING LOGIC (Enhanced) ---
+        # --- SCORING LOGIC (Enhanced V2) ---
         score = 0
         
-        # Trend (MA + Ichimoku + MACD)
+        # A. Trend (Max 40)
         if current_price > ma25: score += 10
-        if ma5 > ma25: score += 5
+        if ma25 > ma25_prev: score += 5      # Rising Slope
+        if ma5 > ma25: score += 5            # Golden Cross State
         if current_price > kumo_top: score += 5
         if tenkan_val > kijun_val: score += 5
         if macd_val > signal_val: score += 5
         if macd_val > 0: score += 5
         
-        # Momentum & Volatility
-        if 30 <= rsi <= 50: score += 10
-        elif rsi > 75: score -= 5
+        # B. Momentum & Volatility (Max 20)
+        if 40 <= rsi <= 70: score += 10      # Healthy Trend
+        elif 30 <= rsi < 40: score += 5      # Recovering
+        elif rsi > 80: score -= 5            # Overheated
         
-        if score < 50 and bb_pos < 0.1: score += 10
+        # Reversal Bonus
+        if score < 40 and bb_pos < 0.0: score += 10 # Oversold at BB Lower
         
-        # Volume
-        if vol_ratio > 2.0: score += 5
+        # C. Volume (Max 10)
+        if vol_ratio > 1.5: score += 10
+        elif vol_ratio > 1.2: score += 5
 
-        # Fundamental Score
-        if 0 < pbr < 1.0: score += 5
-        if 0 < per < 15: score += 5
+        # D. Fundamental Score (Max 20) - Requested by User
+        if 0 < pbr < 1.0: score += 10
+        if 0 < per < 15: score += 10
         
-        # Risk Reward
+        # E. Risk Reward (Max 10)
         try:
             recent_high = hist['High'].iloc[-60:].max()
             StopLoss = ma25 - atr 
@@ -180,7 +196,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             
             rr = upside / downside
             if rr >= 1.0:
-                rr_score = min(15, rr * 5)
+                rr_score = min(10, rr * 3) # Max 10
                 score += rr_score
         except:
             rr = 0.0
@@ -220,10 +236,12 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         final_commentary = "\n".join(commentary)
         
         short_reason = []
-        if score >= 70: short_reason.append("強気シグナル")
+        if score >= 70: short_reason.append("強気")
+        if ma25 > ma25_prev and current_price > ma25: short_reason.append("上昇トレンド")
         if rsi <= 35: short_reason.append("売られすぎ")
-        if vol_ratio > 2: short_reason.append("出来高急増")
-        if pbr < 1.0 and pbr > 0: short_reason.append("割安(PBR)")
+        if vol_ratio > 1.5: short_reason.append("出来高増")
+        if 0 < pbr < 1.0: short_reason.append(f"低PBR({pbr:.2f})")
+        if 0 < per < 15: short_reason.append(f"割安({per:.1f})")
         
         return {
             "Code": code,
