@@ -1,6 +1,6 @@
 requests
 beautifulsoup4
-yfinance>=0.2.40
+yfinance>=0.2.54
 pandas
 streamlit>=1.40.0
 plotly
