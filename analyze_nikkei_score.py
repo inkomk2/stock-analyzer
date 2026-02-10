@@ -30,8 +30,8 @@ except Exception as e:
 # Deduplicate
 tickers = list(set(tickers)) 
 
-# LIMIT TO TOP 50 for Cloud Stability
-tickers = tickers[:50]
+# LIMIT TO TOP 5 for Fast Debugging
+tickers = tickers[:5]
 
 def analyze_stock(code, hist_data=None, fundamentals=None):
     try:
@@ -49,10 +49,22 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
                 import streamlit as st
                 st.write(f"DEBUG: {code} - History Empty. Info: {ticker.info if ticker else 'No Ticker'}")
             except:
-                print(f"DEBUG: {code} - History Empty")
+                pass
             return None
             
         current_price = hist['Close'].iloc[-1]
+        
+        # ... (rest of function) ...
+        
+    except Exception as e:
+        try:
+            import streamlit as st
+            st.error(f"DEBUG: Error in analyze_stock({code}): {e}")
+            import traceback
+            st.text(traceback.format_exc())
+        except:
+            print(f"Error analyzing stock {code}: {e}")
+        return None
         
         # MA Calculation
         ma5 = hist['Close'].rolling(window=5).mean().iloc[-1]
