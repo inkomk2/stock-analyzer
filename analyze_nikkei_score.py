@@ -289,31 +289,50 @@ def get_scored_stocks(status_callback=None):
     """
     results = []
     
-    # SEQUENTIAL EXECUTION FOR DEBUGGING
-    # The user reports "No Data" even with ThreadPool.
-    # We need to see EXACTLY what happens.
+    import streamlit as st
     
-    print("Starting SEQUENTIAL analysis (for debugging)...")
+    # SEQUENTIAL EXECUTION FOR DEBUGGING
+    results = []
+    
+    # DEBUG: Force UI output
+    st.write(f"DEBUG: Starting analysis of {len(tickers)} tickers...")
+    
+    if not tickers:
+        st.error("DEBUG: Tickers list is empty!")
+        return []
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     total_tickers = len(tickers)
     
     for i, code in enumerate(tickers):
-        try:
-            print(f"[{i+1}/{total_tickers}] Analyzing {code}...")
-            
-            # Analyze synchronously
-            res = analyze_stock(code)
-            
-            if res:
-                results.append(res)
-                print(f" -> Success: Score={res['Score']}")
-            else:
-                print(f" -> Failed: No result returned")
+        with st.container(): # Use container to isolate potential output errors
+            try:
+                status_text.text(f"Analyzing {code} ({i+1}/{total_tickers})...")
+                # print(f"[{i+1}/{total_tickers}] Analyzing {code}...")
                 
-        except Exception as e:
-            print(f" -> Error analyzing {code}: {e}")
+                # Analyze synchronously
+                res = analyze_stock(code)
+                
+                if res:
+                    results.append(res)
+                    # st.write(f" -> Success: {code} Score={res['Score']}")
+                else:
+                    st.write(f" -> Failed: {code} (No result)")
+                    
+            except Exception as e:
+                st.error(f" -> Error analyzing {code}: {e}")
+        
+        progress_bar.progress((i + 1) / total_tickers)
         
         if status_callback:
             status_callback((i + 1) / total_tickers)
+                
+    # Sort by Score Descending
+    results.sort(key=lambda x: x['Score'], reverse=True)
+    st.write(f"DEBUG: Finished. Found {len(results)} valid stocks.")
+    return results
                 
     # Sort by Score Descending
     results.sort(key=lambda x: x['Score'], reverse=True)
