@@ -156,31 +156,29 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', pbr)
             per = fundamentals.get('per', per)
 
-        # --- SCORING LOGIC (Swing Trade Focus) ---
+        # --- SCORING LOGIC (AI Balanced Swing Model) ---
         score_trend = 0
         score_mom = 0
         score_vol = 0
         score_fund = 0
         score_rr = 0
         
-        # A. Trend (Max 50) - Prime/Odd Weights
-        if current_price > ma25: score_trend += 12
-        if ma25 > ma25_prev: score_trend += 9        # Strict Slope
-        if ma5 > ma25: score_trend += 9              # Strong GC
-        if current_price > kumo_top: score_trend += 6
-        if tenkan_val > kijun_val: score_trend += 4
-        if macd_val > signal_val: score_trend += 4
-        if macd_val > 0: score_trend += 3
-        if current_price > ma75: score_trend += 2
-        if current_price > ma5: score_trend += 1
+        # A. Trend (Max 45) - The Foundation
+        if current_price > ma25: score_trend += 10
+        if ma25 > ma25_prev: score_trend += 10       # Uptrend Slope
+        if ma5 > ma25: score_trend += 10             # Golden Cross / Strong
+        if current_price > kumo_top: score_trend += 5
+        if macd_val > signal_val: score_trend += 5
+        if current_price > ma75: score_trend += 5
         
-        # B. Momentum (Max 20) - Stricter Sweet Spot
-        if 55 <= rsi <= 70: score_mom += 17          # Best Zone
-        elif 50 <= rsi < 55: score_mom += 11         # Good
-        elif 40 <= rsi < 50: score_mom += 7          # Recovering
-        elif rsi > 75: score_mom -= 8                # Overheated Penalty
+        # B. Momentum (Max 25) - The Driver
+        if 55 <= rsi <= 72: score_mom += 25          # Perfect Swing Zone
+        elif 50 <= rsi < 55: score_mom += 15         # Warming Up
+        elif 72 < rsi <= 78: score_mom += 15         # Very Strong
+        elif 40 <= rsi < 50: score_mom += 5          # Reset/Weak
+        elif rsi > 80: score_mom -= 10               # Danger Zone
         
-        # C. Volume (Max 10) - Dynamic
+        # C. Volume (Max 15) - The Fuel
         # Check for Panic Selling (High Volume + Sharp Drop)
         daily_ret = 0.0
         try:
@@ -190,54 +188,50 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pass
 
         if daily_ret < -0.03 and vol_ratio > 1.5:
-             score_vol -= 20 # Severe Penalty for Panic
+             score_vol -= 20 # Circuit Breaker (Panic Sell)
         else:
-             # Harder to get max points (Need 2.5x volume for 10pts)
-             vol_points = int(vol_ratio * 4)
-             score_vol = min(10, vol_points)
-             if vol_ratio > 1.0 and score_vol < 2: score_vol = 2
+             # Volume is fuel. More is generally better if not panic.
+             # 1.0x -> 5pts, 2.0x -> 10pts, 3.0x -> 15pts
+             vol_points = int(vol_ratio * 5)
+             score_vol = min(15, vol_points)
+             if vol_ratio >= 1.0 and score_vol < 3: score_vol = 3
 
-        # D. Fundamental (Max 10) - Granular
-        if 0 < pbr < 1.0: score_fund += 4
-        elif 0 < pbr < 1.5: score_fund += 2
+        # D. Fundamental (Max 5) - The Safety Net
+        # Just a sanity check. If it's not terribly expensive, give points.
+        if (0 < pbr < 1.5) or (0 < per < 25):
+            score_fund += 5
         
-        if 0 < per < 15: score_fund += 4
-        elif 0 < per < 25: score_fund += 2
-        
-        # E. Risk Reward (Max 10) - Dynamic & Synced with Strategy
+        # E. Risk Reward (Max 10) - The Strategy
         try:
             recent_high = hist['High'].iloc[-60:].max()
             
-            # Determine Virtual Entry Price for Scoring (Match Strategy Logic)
+            # Virtual Entry Logic
             if current_price > ma25 and rsi >= 50:
-                entry_ref = ma5 # Trend Follow
+                entry_ref = ma5
             elif current_price > ma25:
-                entry_ref = ma25 # Dip Buy
+                entry_ref = ma25
             else:
-                entry_ref = current_price # Downtrend/Neutral
+                entry_ref = current_price
                 
-            # Stop Loss & Targets based on Virtual Entry
             StopLoss = entry_ref - (2 * atr)
-            
             upside = recent_high - entry_ref
-            if upside <= 0: upside = 4 * atr # Blue Sky Bonus
-            
+            if upside <= 0: upside = 4 * atr
             downside = entry_ref - StopLoss
             if downside <= 0: downside = 0.1
             
             rr = upside / downside
             
-            # Linear score: RR 3.0 -> 10pts
+            # Linear score: RR 3.0 -> ~10pts
             rr_points = int(rr * 3.5)
             score_rr = min(10, rr_points)
             
         except:
-            rr = 0.0
             score_rr = 0
 
         # Cap score
         total_score = score_trend + score_mom + score_vol + score_fund + score_rr
-        # Deduct if slope is clearly down to be strict
+        
+        # Penalty for clear downtrend
         if ma25 < ma25_prev: total_score -= 5
         
         score = min(100, int(total_score))
@@ -281,10 +275,10 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         # Breakdown for Report
         commentary.append("")
         commentary.append("【スコア内訳】")
-        commentary.append(f"・トレンド: {int(score_trend)}/50")
-        commentary.append(f"・モメンタム: {int(score_mom)}/20")
-        commentary.append(f"・出来高: {int(score_vol)}/10")
-        commentary.append(f"・ファンダ: {int(score_fund)}/10")
+        commentary.append(f"・トレンド: {int(score_trend)}/45")
+        commentary.append(f"・モメンタム: {int(score_mom)}/25")
+        commentary.append(f"・出来高: {int(score_vol)}/15")
+        commentary.append(f"・ファンダ: {int(score_fund)}/5")
         commentary.append(f"・R/R: {int(score_rr)}/10")
 
 
