@@ -12,6 +12,8 @@ tickers = [
     # ... (Keep tickers list)
 ]
 tickers = list(set(tickers)) # Deduplicate just in case
+# LIMIT TO TOP 50 for Cloud Stability
+tickers = tickers[:50]
 
 def analyze_stock(code, hist_data=None, fundamentals=None):
     try:
