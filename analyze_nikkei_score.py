@@ -7,11 +7,29 @@ import pandas as pd
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-# Partial List of Nikkei 225 Components (Major ones gathered)
-tickers = [
-    # ... (Keep tickers list)
-]
-tickers = list(set(tickers)) # Deduplicate just in case
+import json
+import os
+
+# Load Nikkei 225 Tickers from JSON
+try:
+    # Assuming nikkei_names.json is in the same directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(current_dir, 'nikkei_names.json')
+    
+    with open(json_path, 'r', encoding='utf-8') as f:
+        nikkei_data = json.load(f)
+        tickers = list(nikkei_data.keys())
+except Exception as e:
+    # Fallback if JSON fails (Critical Backup)
+    print(f"Error loading nikkei_names.json: {e}")
+    tickers = [
+        "7203", "9984", "8306", "6758", "6861", "6954", "6501", "8035", "6098", "6367",
+        "4063", "8058", "9432", "4568", "9433", "7974", "8316", "3382", "7267", "6902"
+    ]
+
+# Deduplicate
+tickers = list(set(tickers)) 
+
 # LIMIT TO TOP 50 for Cloud Stability
 tickers = tickers[:50]
 
