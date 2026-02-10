@@ -47,7 +47,8 @@ def safe_import_st():
 def analyze_stock(code, hist_data=None, fundamentals=None):
     try:
         # DEBUG ENTRY
-        safe_import_st().write(f"DEBUG: Analyzing {code} (Inside function)")
+        st = safe_import_st()
+        st.write(f"DEBUG: Analyzing {code} (Inside function)")
 
         # If batch data is provided, use it
         if hist_data is not None:
@@ -58,129 +59,130 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             ticker = yf.Ticker(f"{code}.T")
             hist = ticker.history(period="6mo")
             
-        safe_import_st().write(f"DEBUG: Fetched {code}. Shape: {hist.shape}")
-        safe_import_st().write(f"DEBUG: Columns: {hist.columns}")
-        safe_import_st().write(f"DEBUG: Head: {hist.head(1)}")
+        st.write(f"DEBUG: Fetched {code}. Shape: {hist.shape}")
+        # st.write(f"DEBUG: Columns: {hist.columns}")
+        # st.write(f"DEBUG: Head: {hist.head(1)}")
 
         if hist.empty:
-            safe_import_st().error(f"DEBUG: {code} - History is EMPTY.")
+            st.error(f"DEBUG: {code} - History is EMPTY.")
             return None
             
-        try:
-            current_price = hist['Close'].iloc[-1]
-            safe_import_st().write(f"DEBUG: Current Price: {current_price}")
-        except Exception as e:
-            safe_import_st().error(f"CRITICAL ERROR getting price for {code}: {e}")
-            return None
+        current_price = hist['Close'].iloc[-1]
+        st.write(f"DEBUG: Current Price: {current_price}")
         
-        # ... (rest of function) ...
+        st.write(f"DEBUG: {code} - Checkpoint A (MA)")
         
-    except Exception as e:
-        safe_import_st().error(f"DEBUG: Checkpoint Violation in {code}: {e}")
-        try:
-            import traceback
-            safe_import_st().text(traceback.format_exc())
-        except:
-            pass
-        return None
+        # MA Calculation
+        ma5 = hist['Close'].rolling(window=5).mean().iloc[-1]
+        ma25 = hist['Close'].rolling(window=25).mean().iloc[-1]
+        ma75 = hist['Close'].rolling(window=75).mean().iloc[-1]
         
-        safe_import_st().write(f"DEBUG: {code} - Checkpoint A (MA)")
-        
-        # ... (MA code)
+        # Previous MA25 (5 days ago) for slope
+        ma25_prev = hist['Close'].rolling(window=25).mean().iloc[-6]
         
         # ATR Calculation
-        # ...
-        
-        safe_import_st().write(f"DEBUG: {code} - Checkpoint B (ATR)")
+        st.write(f"DEBUG: {code} - Checkpoint B (ATR)")
+        try:
+            high_low = hist['High'] - hist['Low']
+            high_close = np.abs(hist['High'] - hist['Close'].shift())
+            low_close = np.abs(hist['Low'] - hist['Close'].shift())
+            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = tr.rolling(14).mean().iloc[-1]
+        except Exception as e:
+            st.error(f"ATR Calc Error: {e}")
+            atr = 0
 
         # --- EXTENDED TECHNICAL ANALYSIS ---
+        st.write(f"DEBUG: {code} - Checkpoint C (Technicals)")
         
-        # ... (Technicals)
-        
-        safe_import_st().write(f"DEBUG: {code} - Checkpoint C (Technicals)")
-        
-        # ...
-        
-        # 3. Fundamentals
-        pbr, per = 0, 0
-        
-        safe_import_st().write(f"DEBUG: {code} - Checkpoint D (Fundamentals)")
+        try:
+            # 1. MACD (12, 26, 9)
+            ema12 = hist['Close'].ewm(span=12, adjust=False).mean()
+            ema26 = hist['Close'].ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            signal = macd.ewm(span=9, adjust=False).mean()
+            macd_val = macd.iloc[-1]
+            signal_val = signal.iloc[-1]
+            
+            # 2. Bollinger Bands (20, 2sigma)
+            ma20 = hist['Close'].rolling(window=20).mean()
+            std20 = hist['Close'].rolling(window=20).std()
+            bb_upper = ma20 + (2 * std20)
+            bb_lower = ma20 - (2 * std20)
+            bb_pos = (current_price - bb_lower) / (bb_upper - bb_lower) 
+            
+            # 3. Ichimoku Cloud (9, 26, 52)
+            high9 = hist['High'].rolling(window=9).max()
+            low9 = hist['Low'].rolling(window=9).min()
+            tenkan = (high9 + low9) / 2
+            
+            high26 = hist['High'].rolling(window=26).max()
+            low26 = hist['Low'].rolling(window=26).min()
+            kijun = (high26 + low26) / 2
+            
+            senkou_a = ((tenkan + kijun) / 2).shift(26)
+            senkou_b = ((hist['High'].rolling(window=52).max() + hist['Low'].rolling(window=52).min()) / 2).shift(26)
+            
+            # Latest values
+            tenkan_val = tenkan.iloc[-1]
+            kijun_val = kijun.iloc[-1]
+            senkou_a_val = senkou_a.iloc[-1]
+            senkou_b_val = senkou_b.iloc[-1]
+            kumo_top = max(senkou_a_val, senkou_b_val)
+            # kumo_bottom = min(senkou_a_val, senkou_b_val)
 
+            # RSI
+            delta = hist['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            
+            # Volume
+            vol_ma25 = hist['Volume'].rolling(window=25).mean().iloc[-1]
+            current_vol = hist['Volume'].iloc[-1]
+            vol_ratio = current_vol / vol_ma25 if vol_ma25 > 0 else 1.0
+
+        except Exception as e:
+            st.error(f"Technical Calc Error: {e}")
+            return None
+
+        # 3. Fundamentals
+        st.write(f"DEBUG: {code} - Checkpoint D (Fundamentals)")
+        pbr, per = 0, 0
         if fundamentals:
             pbr = fundamentals.get('pbr', 0)
             per = fundamentals.get('per', 0)
-        elif ticker:
-            # Single mode fallback
-            try:
-                # SKIP INFO FETCH FOR NOW TO TEST STABILITY
-                # info = ticker.info
-                # pbr = info.get('priceToBook', 0)
-                # per = info.get('trailingPE', 0)
-                pbr, per = 0, 0
-            except:
-                 pbr, per = 0, 0
 
-        safe_import_st().write(f"DEBUG: {code} - Checkpoint E (Scoring)")
+        st.write(f"DEBUG: {code} - Checkpoint E (Scoring)")
 
         # --- SCORING LOGIC (Enhanced) ---
         score = 0
-        # ...
         
-        # Fundamentals fallback REMOVED (Redundant and dangerous)
+        # Trend (MA + Ichimoku + MACD)
+        if current_price > ma25: score += 10
+        if ma5 > ma25: score += 5
+        if current_price > kumo_top: score += 5
+        if tenkan_val > kijun_val: score += 5
+        if macd_val > signal_val: score += 5
+        if macd_val > 0: score += 5
         
-        # ...
+        # Momentum & Volatility
+        if 30 <= rsi <= 50: score += 10
+        elif rsi > 75: score -= 5
+        
+        if score < 50 and bb_pos < 0.1: score += 10
+        
+        # Volume
+        if vol_ratio > 2.0: score += 5
 
-        # Fundamental Score (Yield Removed)
+        # Fundamental Score
         if 0 < pbr < 1.0: score += 5
         if 0 < per < 15: score += 5
-        
-        # Risk Reward (Re-integrated)
-        recent_high = hist['High'].iloc[-60:].max()
-        StopLoss = ma25 - atr 
-        if current_price < ma25: StopLoss = current_price - 2*atr
-        
-        upside = recent_high - current_price
-        downside = current_price - StopLoss
-        if downside <= 0: downside = 0.1 
-        
-        rr = upside / downside
-        if rr >= 1.0:
-            score += min(15, rr * 5)
-        if rr >= 1.0:
-            rr_score = min(15, rr * 5)
-            score += rr_score
-            if rr > 2.5:
-                details.append(f"R/R良({rr:.1f})")
-        
-        score = int(score)
         
         # Cap score
         score = min(100, int(score))
 
-        # --- COMMENTARY GENERATION (Approx 20 lines) ---
-        commentary = []
-        commentary.append(f"【総合評価】 スコア: {score}点")
-        commentary.append(f"現在値: {current_price:,.0f}円 (前日比 {(current_price - hist['Close'].iloc[-2]):+,.0f}円)")
-        
-        # Trend
-        trend_desc = "上昇" if current_price > ma25 else "下落"
-        cloud_desc = "雲上" if current_price > kumo_top else ("雲下" if current_price < kumo_bottom else "雲中")
-        commentary.append(f"トレンド: {trend_desc}トレンド / 一目均衡表: {cloud_desc}")
-        
-        # MACD
-        macd_val = float(macd_val) if not np.isnan(macd_val) else 0.0
-        signal_val = float(signal_val) if not np.isnan(signal_val) else 0.0
-        macd_desc = "ゴールデンクロス中" if macd_val > signal_val else "デッドクロス中"
-        commentary.append(f"MACD: {macd_desc} (MACD:{macd_val:.1f} / Signal:{signal_val:.1f})")
-        
-        # Bollinger
-        bb_desc = "バンド内に収束"
-        if bb_pos > 1.0: bb_desc = "+2σ突破 (過熱感あり)"
-        elif bb_pos < 0.0: bb_desc = "-2σ割れ (売られすぎ)"
-        commentary.append(f"ボリンジャーバンド: {bb_desc}")
-        
-        # RSI & Volume
-        commentary.append(f"RSI(14): {rsi:.1f} ({'過熱圏' if rsi>70 else ('売られすぎ' if rsi<30 else '中立')})")
         commentary.append(f"出来高: 通常比 {vol_ratio:.1f}倍 ({'急増' if vol_ratio>1.5 else '通常'})")
         
         # Fundamentals
