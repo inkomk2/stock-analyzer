@@ -181,8 +181,21 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         if (score_trend + score_mom) < 40 and bb_pos < 0.0: score_mom += 10 
         
         # C. Volume (Max 10)
-        if vol_ratio > 1.5: score_vol += 10
-        elif vol_ratio > 1.2: score_vol += 5
+        # Check for Panic Selling (High Volume + Sharp Drop)
+        daily_ret = 0.0
+        try:
+            prev_close = hist['Close'].iloc[-2]
+            daily_ret = (current_price - prev_close) / prev_close
+        except:
+            pass
+
+        if vol_ratio > 1.5:
+            if daily_ret < -0.03: # Dropped > 3% with high volume = Panic
+                score_vol -= 10
+            else:
+                score_vol += 10
+        elif vol_ratio > 1.2 and daily_ret > -0.02:
+            score_vol += 5
 
         # D. Fundamental Score (Max 20)
         if 0 < pbr < 1.0: score_fund += 10
@@ -236,15 +249,35 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         
         commentary.append("")
         commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
+        
+        # Breakdown for Report
+        commentary.append("")
+        commentary.append("【スコア内訳】")
+        commentary.append(f"・トレンド: {int(score_trend)}/40")
+        commentary.append(f"・モメンタム: {int(score_mom)}/20")
+        commentary.append(f"・ファンダ: {int(score_fund)}/20")
+        commentary.append(f"・出来高: {int(score_vol)}/10")
+        commentary.append(f"・R/R: {int(score_rr)}/10")
+
         commentary.append("※投資判断は自己責任で行ってください。")
         
         final_commentary = "\n".join(commentary)
         
         short_reason = []
-        if score >= 70: short_reason.append("強気")
+        if score >= 80: short_reason.append("激アツ")
+        elif score >= 70: short_reason.append("強気")
+        
+        # Panic Sell Detection
+        if daily_ret < -0.03 and vol_ratio > 1.5:
+            short_reason.append("投げ売り警戒")
+        
         if ma25 > ma25_prev and current_price > ma25: short_reason.append("上昇トレンド")
         if rsi <= 35: short_reason.append("売られすぎ")
-        if vol_ratio > 1.5: short_reason.append("出来高増")
+        
+        # Good Volume
+        if vol_ratio > 1.5 and daily_ret >= -0.03: 
+            short_reason.append("出来高増")
+            
         if 0 < pbr < 1.0: short_reason.append(f"低PBR({pbr:.2f})")
         if 0 < per < 15: short_reason.append(f"割安({per:.1f})")
         
