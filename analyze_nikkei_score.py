@@ -33,8 +33,22 @@ tickers = list(set(tickers))
 # LIMIT TO TOP 5 for Fast Debugging
 tickers = tickers[:5]
 
+# Helper for debug logging
+def safe_import_st():
+    try:
+        import streamlit as st
+        return st
+    except ImportError:
+        class DummyST:
+            def write(self, *args, **kwargs): print(*args, **kwargs)
+            def error(self, *args, **kwargs): print("ERROR:", *args, **kwargs)
+        return DummyST()
+
 def analyze_stock(code, hist_data=None, fundamentals=None):
     try:
+        # DEBUG ENTRY
+        safe_import_st().write(f"DEBUG: Analyzing {code} (Inside function)")
+
         # If batch data is provided, use it
         if hist_data is not None:
             hist = hist_data
@@ -44,12 +58,10 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             ticker = yf.Ticker(f"{code}.T")
             hist = ticker.history(period="6mo")
             
+        safe_import_st().write(f"DEBUG: Fetched {code}. Shape: {hist.shape}")
+
         if hist.empty:
-            try:
-                import streamlit as st
-                st.write(f"DEBUG: {code} - History Empty. Info: {ticker.info if ticker else 'No Ticker'}")
-            except:
-                pass
+            safe_import_st().error(f"DEBUG: {code} - History is EMPTY.")
             return None
             
         current_price = hist['Close'].iloc[-1]
