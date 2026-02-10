@@ -323,16 +323,39 @@ def get_scored_stocks(status_callback=None):
             ticker_key = f"{code}.T"
             
             # Check if data exists for this ticker
-            if ticker_key in data.columns.levels[0]:
-                hist = data[ticker_key].copy()
-            else:
-                # Handle case where yfinance might verify ticker but return no data, 
-                # or if structure is different (e.g. only 1 ticker in batch?)
-                # If only 1 ticker, columns are just Open, High... not MultiIndex
-                if len(tickers) == 1:
-                    hist = data
+            if isinstance(data.columns, pd.MultiIndex):
+                if ticker_key in data.columns.levels[0]:
+                    hist = data[ticker_key].copy()
                 else:
                     continue
+            else:
+                # If not MultiIndex, it might be a single ticker result
+                # In yfinance, if we ask for multiple but only 1 returns, it gives single index
+                # We need to verify if this single result corresponds to the current ticker loop
+                
+                # If we asked for 225 tickers, and got single index, it means either:
+                # 1. only 1 was valid (unlikely for 225)
+                # 2. yfinance failed to group?
+                
+                # Let's assume if it is not MultiIndex, it MIGHT be the data if len(tickers) == 1
+                # But here len(tickers) is ~225. 
+                # If yfinance returns single index for multiple tickers request, it's usually an error or only 1 valid.
+                # However, sometimes if all columns are unique (e.g. only Close?), no.
+                
+                # Check if 'Close' is in columns. 
+                if 'Close' in data.columns:
+                     # This is a single ticker df. Which one?
+                     # We can't know for sure if we requested multiple.
+                     # But maybe we can check if it's the ONLY ticker?
+                     if len(tickers) == 1:
+                         hist = data.copy()
+                     else:
+                        # Fallback: Try to access via swaplevel if something is wrong, or just skip
+                        # Actually, yfinance might return keys as columns if group_by='ticker' failed?
+                        continue
+                else:
+                     continue
+
 
             # Check for NaN in recent data (delisted or error)
             if hist['Close'].isna().iloc[-1]:
