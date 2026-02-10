@@ -140,51 +140,7 @@ def render_analysis_view(code_input):
             with s1:
                 st.metric("総合スコア", f"{param_score}点", help="トレンド・過熱感・リスクリワードから算出した、AIによる推奨度です。")
             
-            # --- SCORE BREAKDOWN (Radar Chart) ---
-            if advanced_stats and 'ScoreDetail' in advanced_stats:
-                with s2:
-                    details = advanced_stats['ScoreDetail']
-                    
-                    # Normalize for Chart (Max points based on logic)
-                    categories = ['トレンド', 'モメンタム', 'ファンダ', '出来高', 'R/R']
-                    # Max points: Trend=40, Mom=20, Fund=20, Vol=10, RR=10
-                    values = [
-                        details.get('Trend', 0),
-                        details.get('Momentum', 0),
-                        details.get('Fundamentals', 0),
-                        details.get('Volume', 0),
-                        details.get('RiskReward', 0)
-                    ]
-                    max_values = [40, 20, 20, 10, 10]
-                    
-                    # Normalize to 100 scale for chart
-                    normalized = [min(100, v/m*100) if m>0 else 0 for v, m in zip(values, max_values)]
-                    
-                    # Close the loop
-                    cat_plot = categories + [categories[0]]
-                    val_plot = normalized + [normalized[0]]
-                    
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatterpolar(
-                        r=val_plot,
-                        theta=cat_plot,
-                        fill='toself',
-                        name=name,
-                        hoverinfo='text',
-                        text=[f"{v}/{m}" for v, m in zip(values+values[:1], max_values+max_values[:1])]
-                    ))
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(size=8))
-                        ),
-                        margin=dict(l=20, r=20, t=10, b=10),
-                        height=180,
-                        showlegend=False,
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="white")
-                    )
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False}, key="radar_chart")
+
             
             # --- Metrics (Row 1) ---
             # Row 1: Price & Entry
