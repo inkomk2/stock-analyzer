@@ -17,8 +17,17 @@ def get_strategy_metrics(code):
     current_price = hist['Close'].iloc[-1]
     
     # Indicators
+    # Indicators
+    ma5 = hist['Close'].rolling(window=5).mean().iloc[-1]
     ma25 = hist['Close'].rolling(window=25).mean().iloc[-1]
     ma75 = hist['Close'].rolling(window=75).mean().iloc[-1]
+    
+    # RSI (for Entry Logic)
+    delta = hist['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs)).iloc[-1]
     
     # Volatility (ATR 14)
     high_low = hist['High'] - hist['Low']
@@ -30,13 +39,18 @@ def get_strategy_metrics(code):
     # Recent High (Resistance) for Take Profit
     recent_high = hist['High'].iloc[-60:].max()
     
-    # STRATEGY LOGIC
-    if current_price > ma25:
+    # STRATEGY LOGIC (Dynamic)
+    if current_price > ma25 and rsi >= 50:
+        # Strong Momentum -> Trend Follow (MA5)
+        entry_price = ma5
+        dip_desc = "Trend Follow (MA5)"
+    elif current_price > ma25:
+        # Weak Momentum -> Wait for Dip (MA25)
         entry_price = ma25
-        dip_desc = "MA25 Support"
+        dip_desc = "Dip Buy (MA25)"
     elif current_price > ma75:
         entry_price = ma75
-        dip_desc = "MA75 Support"
+        dip_desc = "Rebound (MA75)"
     else:
         entry_price = hist['Low'].iloc[-20:].min()
         dip_desc = "Recent Low"
@@ -45,7 +59,7 @@ def get_strategy_metrics(code):
     
     target_profit = recent_high
     if (target_profit - entry_price) < (1.5 * atr):
-            target_profit = entry_price + (3 * atr)
+            target_profit = entry_price + (4 * atr) # More room for trend logic
             
     # Risk Reward Calculation
     potential_profit = target_profit - entry_price
@@ -105,12 +119,14 @@ def get_strategy_metrics(code):
     
     # 3. Strategy Explanation
     report_lines.append(f"\n**【戦略ポイント】**")
-    if dip_desc == "MA25 Support":
-        report_lines.append(f"25日移動平均線（{int(ma25):,}円）付近まで調整したところでの**押し目買い**を狙います。上昇トレンド中の押し目は勝率が高いパターンです。")
-    elif dip_desc == "MA75 Support":
-            report_lines.append(f"25日線を割り込みましたが、75日移動平均線（{int(ma75):,}円）がサポートとして機能する可能性があります。")
+    if dip_desc == "Trend Follow (MA5)":
+        report_lines.append(f"上昇モメンタムが強いため、**5日移動平均線（{int(ma5):,}円）付近** での浅い押し目を拾う「トレンドフォロー」を推奨します。置いていかれないよう積極的に狙う局面です。")
+    elif dip_desc == "Dip Buy (MA25)":
+        report_lines.append(f"過熱感がないため、**25日移動平均線（{int(ma25):,}円）付近** まで調整するのをじっくり待ちます。")
+    elif dip_desc == "Rebound (MA75)":
+        report_lines.append(f"25日線を割り込みましたが、**75日移動平均線（{int(ma75):,}円）** がサポートとして機能する可能性があります。")
     else:
-            report_lines.append(f"明確なサポートラインが見当たらないため、直近安値を目処にします。")
+        report_lines.append(f"明確なサポートラインが見当たらないため、直近安値を目処にします。")
             
     # 4. Risk Reward
     report_lines.append(f"\n**【リスク管理】**")
