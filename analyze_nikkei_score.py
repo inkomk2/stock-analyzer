@@ -205,13 +205,21 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             if current_price < ma25: StopLoss = current_price - 2*atr
             
             upside = recent_high - current_price
+            # If at New High (upside <= 0), assume continued trend potential
+            if upside <= 0:
+                upside = 3 * atr
+            
             downside = current_price - StopLoss
-            if downside <= 0: downside = 0.1 
+            if downside <= 0: downside = 0.1 # Should not happen if StopLoss < Current
             
             rr = upside / downside
-            if rr >= 1.0:
-                rr_score = min(10, rr * 3) # Max 10
-                score_rr += rr_score
+            
+            # Score Calculation
+            if rr >= 3.0: score_rr += 10
+            elif rr >= 2.0: score_rr += 7
+            elif rr >= 1.5: score_rr += 5
+            elif rr >= 1.0: score_rr += 3
+            
         except:
             rr = 0.0
 
@@ -243,6 +251,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         
         # Fundamentals
         commentary.append(f"PBR: {pbr:.2f}倍 / PER: {per:.1f}倍")
+        commentary.append(f"R/R比: {rr:.2f}") # Add explicit R/R ratio here too
         
         commentary.append("")
         commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
