@@ -154,60 +154,6 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', 0)
             per = fundamentals.get('per', 0)
 
-        st.write(f"DEBUG: {code} - Checkpoint E (Scoring)")
-
-        # --- SCORING LOGIC (Enhanced) ---
-        score = 0
-        
-        # Trend (MA + Ichimoku + MACD)
-        if current_price > ma25: score += 10
-        if ma5 > ma25: score += 5
-        if current_price > kumo_top: score += 5
-        if tenkan_val > kijun_val: score += 5
-        if macd_val > signal_val: score += 5
-        if macd_val > 0: score += 5
-        
-        # Momentum & Volatility
-        if 30 <= rsi <= 50: score += 10
-        elif rsi > 75: score -= 5
-        
-        if score < 50 and bb_pos < 0.1: score += 10
-        
-        # Volume
-        if vol_ratio > 2.0: score += 5
-
-        # Fundamental Score
-        if 0 < pbr < 1.0: score += 5
-        if 0 < per < 15: score += 5
-        
-        # Cap score
-        score = min(100, int(score))
-
-        commentary.append(f"出来高: 通常比 {vol_ratio:.1f}倍 ({'急増' if vol_ratio>1.5 else '通常'})")
-        
-        # Fundamentals
-        commentary.append(f"PBR: {pbr:.2f}倍 / PER: {per:.1f}倍")
-        
-        # Strategy
-        commentary.append("")
-        commentary.append("【AI売買判断】")
-        if score >= 80:
-             commentary.append("評価: ★★★★★ (激アツ)")
-             commentary.append("テクニカル・ファンダメンタルズ共に死角なし。")
-             commentary.append("積極的なエントリーを推奨します。")
-        elif score >= 60:
-             commentary.append("評価: ★★★★☆ (買い推奨)")
-             commentary.append("上昇トレンドを維持しており、押し目買いの好機。")
-             commentary.append("MACDや一目均衡表も好転しています。")
-        elif score >= 40:
-             commentary.append("評価: ★★★☆☆ (様子見)")
-             commentary.append("悪くはありませんが、決定打に欠けます。")
-             commentary.append("トレンドが明確になるまで待機を推奨。")
-        else:
-             commentary.append("評価: ★★☆☆☆ (危険)")
-             commentary.append("下落トレンド、または過熱感が強すぎます。")
-             commentary.append("今は手出し無用です。")
-             
         commentary.append("")
         commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
         commentary.append("※投資判断は自己責任で行ってください。")
