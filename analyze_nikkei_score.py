@@ -204,26 +204,36 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         if 0 < per < 15: score_fund += 4
         elif 0 < per < 25: score_fund += 2
         
-        # E. Risk Reward (Max 10) - Dynamic
+        # E. Risk Reward (Max 10) - Dynamic & Synced with Strategy
         try:
             recent_high = hist['High'].iloc[-60:].max()
-            StopLoss = ma25 - atr 
-            if current_price < ma25: StopLoss = current_price - 2*atr
             
-            upside = recent_high - current_price
-            if upside <= 0: upside = 3 * atr
+            # Determine Virtual Entry Price for Scoring (Match Strategy Logic)
+            if current_price > ma25 and rsi >= 50:
+                entry_ref = ma5 # Trend Follow
+            elif current_price > ma25:
+                entry_ref = ma25 # Dip Buy
+            else:
+                entry_ref = current_price # Downtrend/Neutral
+                
+            # Stop Loss & Targets based on Virtual Entry
+            StopLoss = entry_ref - (2 * atr)
             
-            downside = current_price - StopLoss
-            if downside <= 0: downside = 0.1 
+            upside = recent_high - entry_ref
+            if upside <= 0: upside = 4 * atr # Blue Sky Bonus
+            
+            downside = entry_ref - StopLoss
+            if downside <= 0: downside = 0.1
             
             rr = upside / downside
             
-            # Linear score: RR 3.3 -> 10pts
-            rr_points = int(rr * 3)
+            # Linear score: RR 3.0 -> 10pts
+            rr_points = int(rr * 3.5)
             score_rr = min(10, rr_points)
             
         except:
             rr = 0.0
+            score_rr = 0
 
         # Cap score
         total_score = score_trend + score_mom + score_vol + score_fund + score_rr
@@ -256,8 +266,14 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         commentary.append(f"出来高: 通常比 {vol_ratio:.1f}倍 ({'急増' if vol_ratio>1.5 else '通常'})")
         
         # Fundamentals
-        commentary.append(f"PBR: {pbr:.2f}倍 / PER: {per:.1f}倍")
-        commentary.append(f"R/R比: {rr:.2f}") # Add explicit R/R ratio here too
+        if pbr == 0 and per == 0:
+             commentary.append("PBR/PER: --- (データ取得不可)")
+        else:
+             pbr_str = f"{pbr:.2f}倍" if pbr > 0 else "-"
+             per_str = f"{per:.1f}倍" if per > 0 else "-"
+             commentary.append(f"PBR: {pbr_str} / PER: {per_str}")
+             
+        commentary.append(f"R/R比: {rr:.2f} (想定エントリー基準)")
         
         commentary.append("")
         commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
