@@ -32,7 +32,7 @@ tickers = list(set(tickers))
 
 # LIMIT TO TOP 5 for Fast Debugging
 # LIMIT TO TOP 50 for Cloud Stability (Restored)
-tickers = tickers[:50]
+# tickers = tickers[:50] # UNCOMMENT TO LIMIT IF NEEDED
 
 # Helper for debug logging
 def safe_import_st():
@@ -276,62 +276,56 @@ def get_next_earnings_date(code):
         return "-"
 
 def get_scored_stocks(status_callback=None):
-    """
-    Analyzes all tickers and returns sorted results.
-    status_callback: function(float) to report progress (0.0 to 1.0)
-    """
+    try:
+        import streamlit as st
+    except ImportError:
+        return []
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     results = []
-    
-    import streamlit as st
-    
-    # SEQUENTIAL EXECUTION FOR DEBUGGING
-    results = []
-    
-    # DEBUG: Force UI output
-    st.write(f"DEBUG: Starting analysis of {len(tickers)} tickers...")
     
     if not tickers:
-        st.error("DEBUG: Tickers list is empty!")
+        st.error("Tickers list is empty!")
         return []
+        
+    total_tickers = len(tickers)
+    processed_count = 0
     
     progress_bar = st.progress(0)
     status_text = st.empty()
+    status_text.text(f"Starting analysis of {total_tickers} stocks...")
     
-    total_tickers = len(tickers)
-    
-    import time
-    
-    for i, code in enumerate(tickers):
-        with st.container(): # Use container to isolate potential output errors
+    # Parallel Execution
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_code = {executor.submit(analyze_stock, code): code for code in tickers}
+        
+        for future in as_completed(future_to_code):
+            code = future_to_code[future]
+            processed_count += 1
+            
             try:
-                status_text.text(f"Analyzing {code} ({i+1}/{total_tickers})...")
-                
-                # Sleep to be polite to API
-                time.sleep(1.5)
-                
-                # Analyze synchronously
-                res = analyze_stock(code)
-                
-                if res:
+                res = future.result()
+                if res and isinstance(res, dict) and 'Score' in res:
                     results.append(res)
-                else:
-                    st.write(f" -> Failed: {code} (No result)")
-                    
             except Exception as e:
-                st.error(f" -> Error analyzing {code}: {e}")
-        
-        progress_bar.progress((i + 1) / total_tickers)
-        
-        if status_callback:
-            status_callback((i + 1) / total_tickers)
+                print(f"Error fetching {code}: {e}")
+            
+            # Update Progress
+            progress = processed_count / total_tickers
+            progress_bar.progress(progress)
+            status_text.text(f"Analyzing... ({processed_count}/{total_tickers})")
+            
+            if status_callback:
+                status_callback(progress)
+                
+    status_text.text(f"Analysis Complete! Found {len(results)} valid stocks.")
+    time.sleep(0.5)
+    status_text.empty()
+    progress_bar.empty()
                 
     # Sort by Score Descending
-    results.sort(key=lambda x: x['Score'], reverse=True)
-    st.write(f"DEBUG: Finished. Found {len(results)} valid stocks.")
-    return results
-                
-    # Sort by Score Descending
-    results.sort(key=lambda x: x['Score'], reverse=True)
+    results.sort(key=lambda x: x.get('Score', 0), reverse=True)
     return results
 
 def main():

@@ -320,6 +320,8 @@ with tab1:
                 # Fixed top 20
                 top_n = 20
                 
+                st.caption(f"分析対象: 全{len(scores)}銘柄 (上位{top_n}件を表示)")
+                
                 displayed_scores = scores[:top_n]
                 target_codes = [row['Code'] for row in displayed_scores]
                 
