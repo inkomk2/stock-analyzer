@@ -289,27 +289,31 @@ def get_scored_stocks(status_callback=None):
     """
     results = []
     
-    # Reverting to ThreadPoolExecutor (max_workers=4)
-    # Batch yf.download is unreliable on Cloud (Empty Data).
-    # ThreadPool with new yfinance (curl_cffi) should be faster and safer than sequential.
+    # SEQUENTIAL EXECUTION FOR DEBUGGING
+    # The user reports "No Data" even with ThreadPool.
+    # We need to see EXACTLY what happens.
     
-    print("Starting ThreadPool analysis (max_workers=4)...")
+    print("Starting SEQUENTIAL analysis (for debugging)...")
+    total_tickers = len(tickers)
     
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(analyze_stock, code): code for code in tickers}
-        total_futures = len(futures)
-        
-        for i, future in enumerate(futures):
-            code = futures[future]
-            try:
-                res = future.result()
-                if res:
-                    results.append(res)
-            except Exception as e:
-                print(f"Error analyzing {code}: {e}")
+    for i, code in enumerate(tickers):
+        try:
+            print(f"[{i+1}/{total_tickers}] Analyzing {code}...")
             
-            if status_callback:
-                status_callback((i + 1) / total_futures)
+            # Analyze synchronously
+            res = analyze_stock(code)
+            
+            if res:
+                results.append(res)
+                print(f" -> Success: Score={res['Score']}")
+            else:
+                print(f" -> Failed: No result returned")
+                
+        except Exception as e:
+            print(f" -> Error analyzing {code}: {e}")
+        
+        if status_callback:
+            status_callback((i + 1) / total_tickers)
                 
     # Sort by Score Descending
     results.sort(key=lambda x: x['Score'], reverse=True)
