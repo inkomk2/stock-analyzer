@@ -78,118 +78,51 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             print(f"Error analyzing stock {code}: {e}")
         return None
         
-        # MA Calculation
-        ma5 = hist['Close'].rolling(window=5).mean().iloc[-1]
-        ma25 = hist['Close'].rolling(window=25).mean().iloc[-1]
-        ma75 = hist['Close'].rolling(window=75).mean().iloc[-1]
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint A (MA)")
         
-        # Previous MA25 (5 days ago) for slope
-        ma25_prev = hist['Close'].rolling(window=25).mean().iloc[-6]
+        # ... (MA code)
         
         # ATR Calculation
-        high_low = hist['High'] - hist['Low']
-        high_close = np.abs(hist['High'] - hist['Close'].shift())
-        low_close = np.abs(hist['Low'] - hist['Close'].shift())
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = tr.rolling(14).mean().iloc[-1]
+        # ...
+        
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint B (ATR)")
 
         # --- EXTENDED TECHNICAL ANALYSIS ---
         
-        # 1. MACD (12, 26, 9)
-        ema12 = hist['Close'].ewm(span=12, adjust=False).mean()
-        ema26 = hist['Close'].ewm(span=26, adjust=False).mean()
-        macd = ema12 - ema26
-        signal = macd.ewm(span=9, adjust=False).mean()
-        # hist_macd = macd - signal
-        macd_val = macd.iloc[-1]
-        signal_val = signal.iloc[-1]
+        # ... (Technicals)
         
-        # 2. Bollinger Bands (20, 2sigma)
-        ma20 = hist['Close'].rolling(window=20).mean()
-        std20 = hist['Close'].rolling(window=20).std()
-        bb_upper = ma20 + (2 * std20)
-        bb_lower = ma20 - (2 * std20)
-        # bb_width = (bb_upper - bb_lower) / ma20
-        bb_pos = (current_price - bb_lower) / (bb_upper - bb_lower) # 0=Lower, 0.5=Mid, 1=Upper
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint C (Technicals)")
         
-        # 3. Ichimoku Cloud (9, 26, 52)
-        high9 = hist['High'].rolling(window=9).max()
-        low9 = hist['Low'].rolling(window=9).min()
-        tenkan = (high9 + low9) / 2
-        
-        high26 = hist['High'].rolling(window=26).max()
-        low26 = hist['Low'].rolling(window=26).min()
-        kijun = (high26 + low26) / 2
-        
-        senkou_a = ((tenkan + kijun) / 2).shift(26)
-        senkou_b = ((hist['High'].rolling(window=52).max() + hist['Low'].rolling(window=52).min()) / 2).shift(26)
-        
-        # Latest values
-        tenkan_val = tenkan.iloc[-1]
-        kijun_val = kijun.iloc[-1]
-        senkou_a_val = senkou_a.iloc[-1]
-        senkou_b_val = senkou_b.iloc[-1]
-        kumo_top = max(senkou_a_val, senkou_b_val)
-        kumo_bottom = min(senkou_a_val, senkou_b_val)
-
-        # 8. Historical Volatility (HV) - 20 days annualized
-        ln_ret = np.log(hist['Close'] / hist['Close'].shift(1))
-        hv = ln_ret.rolling(window=20).std().iloc[-1] * np.sqrt(250) * 100
-
-        # --- NEW METRICS ---
-        # 1. RSI (14)
-        delta = hist['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs)).iloc[-1]
-        
-        # 2. Volume Spike
-        vol_ma25 = hist['Volume'].rolling(window=25).mean().iloc[-1]
-        current_vol = hist['Volume'].iloc[-1]
-        vol_ratio = current_vol / vol_ma25 if vol_ma25 > 0 else 1.0
+        # ...
         
         # 3. Fundamentals
         pbr, per = 0, 0
+        
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint D (Fundamentals)")
+
         if fundamentals:
             pbr = fundamentals.get('pbr', 0)
             per = fundamentals.get('per', 0)
         elif ticker:
             # Single mode fallback
             try:
-                info = ticker.info
-                pbr = info.get('priceToBook', 0)
-                per = info.get('trailingPE', 0)
+                # SKIP INFO FETCH FOR NOW TO TEST STABILITY
+                # info = ticker.info
+                # pbr = info.get('priceToBook', 0)
+                # per = info.get('trailingPE', 0)
+                pbr, per = 0, 0
             except:
                  pbr, per = 0, 0
 
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint E (Scoring)")
+
         # --- SCORING LOGIC (Enhanced) ---
         score = 0
+        # ...
         
-        # Trend (MA + Ichimoku + MACD)
-        if current_price > ma25: score += 10 # Base Trend
-        if ma5 > ma25: score += 5 # Strong Momentum
-        if current_price > kumo_top: score += 5 # Above Cloud
-        if tenkan_val > kijun_val: score += 5 # Tenkan/Kijun Cross
-        if macd_val > signal_val: score += 5 # MACD Bullish
-        if macd_val > 0: score += 5 # MACD Positive
+        # Fundamentals fallback REMOVED (Redundant and dangerous)
         
-        # Momentum & Volatility
-        if 30 <= rsi <= 50: score += 10 # Good entry zone
-        elif rsi > 75: score -= 5 # Overbought
-        
-        if score < 50 and bb_pos < 0.1: score += 10 # Bollinger bounce buy
-        
-        # Volume
-        if vol_ratio > 2.0: score += 5 # Big Volume
-
-        # Fundamentals fallback
-        try:
-            info = ticker.info
-            pbr = info.get('priceToBook', 0)
-            per = info.get('trailingPE', 0)
-        except:
-             pbr, per = 0, 0
+        # ...
 
         # Fundamental Score (Yield Removed)
         if 0 < pbr < 1.0: score += 5
