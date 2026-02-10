@@ -154,7 +154,88 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', 0)
             per = fundamentals.get('per', 0)
 
-        commentary.append("")
+        safe_import_st().write(f"DEBUG: {code} - Checkpoint E (Scoring)")
+
+        try:
+            # --- SCORING LOGIC (Enhanced) ---
+            score = 0
+            
+            # Trend (MA + Ichimoku + MACD)
+            if current_price > ma25: score += 10
+            if ma5 > ma25: score += 5
+            if current_price > kumo_top: score += 5
+            if tenkan_val > kijun_val: score += 5
+            if macd_val > signal_val: score += 5
+            if macd_val > 0: score += 5
+            
+            safe_import_st().write(f"DEBUG: {code} - Checkpoint E1 (Trend Done)")
+            
+            # Momentum & Volatility
+            if 30 <= rsi <= 50: score += 10
+            elif rsi > 75: score -= 5
+            
+            if score < 50 and bb_pos < 0.1: score += 10
+            
+            safe_import_st().write(f"DEBUG: {code} - Checkpoint E2 (Momentum Done)")
+            
+            # Volume
+            if vol_ratio > 2.0: score += 5
+
+            # Fundamental Score
+            if 0 < pbr < 1.0: score += 5
+            if 0 < per < 15: score += 5
+            
+            safe_import_st().write(f"DEBUG: {code} - Checkpoint E3 (Volume/Fund Done)")
+            
+            # Risk Reward
+            try:
+                recent_high = hist['High'].iloc[-60:].max()
+                StopLoss = ma25 - atr 
+                if current_price < ma25: StopLoss = current_price - 2*atr
+                
+                upside = recent_high - current_price
+                downside = current_price - StopLoss
+                if downside <= 0: downside = 0.1 
+                
+                rr = upside / downside
+                if rr >= 1.0:
+                    rr_score = min(15, rr * 5)
+                    score += rr_score
+            except:
+                rr = 0.0
+            
+            safe_import_st().write(f"DEBUG: {code} - Checkpoint E4 (RR Done)")
+
+            # Cap score
+            score = min(100, int(score))
+
+            safe_import_st().write(f"DEBUG: {code} - Checkpoint F (Ready to Return)")
+            
+            # --- COMMENTARY GENERATION ---
+            commentary = []
+            commentary.append(f"【総合評価】 スコア: {score}点")
+            commentary.append(f"現在値: {current_price:,.0f}円")
+            
+            # Trend
+            trend_desc = "上昇" if current_price > ma25 else "下落"
+            cloud_desc = "雲上" if current_price > kumo_top else ("雲下" if current_price < kumo_bottom else "雲中")
+            commentary.append(f"トレンド: {trend_desc} / 一目均衡表: {cloud_desc}")
+            
+            # MACD
+            macd_desc = "GC" if macd_val > signal_val else "DC"
+            commentary.append(f"MACD: {macd_desc}")
+            
+            # Bollinger
+            bb_desc = "過熱" if bb_pos > 1.0 else ("売られすぎ" if bb_pos < 0.0 else "正常")
+            commentary.append(f"ボリンジャー: {bb_desc}")
+            
+            commentary.append(f"RSI: {rsi:.1f}")
+
+        except Exception as e:
+            safe_import_st().error(f"DEBUG: Scoring Error in {code}: {e}")
+            import traceback
+            safe_import_st().text(traceback.format_exc())
+            return None
         commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
         commentary.append("※投資判断は自己責任で行ってください。")
         
