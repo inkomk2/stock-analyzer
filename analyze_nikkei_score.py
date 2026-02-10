@@ -7,12 +7,6 @@ import pandas as pd
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-# Fix for yfinance 401 Error (Invalid Crumb)
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-})
-
 # Partial List of Nikkei 225 Components (Major ones gathered)
 tickers = [
     # ... (Keep tickers list)
@@ -27,7 +21,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             ticker = None
         else:
             # Single mode: Fetch data
-            ticker = yf.Ticker(f"{code}.T", session=session)
+            ticker = yf.Ticker(f"{code}.T")
             hist = ticker.history(period="6mo")
 
         if hist.empty:
@@ -299,13 +293,10 @@ def get_scored_stocks(status_callback=None):
     # Tickers string: "7203.T 9984.T ..."
     tickers_str = " ".join([f"{code}.T" for code in tickers])
     
-    print("Batch downloading data...")
-    if status_callback: status_callback(0.1)
-    
     # Download data for all tickers
     # threads=True is default. group_by='ticker' organizes columns by ticker.
     try:
-        data = yf.download(tickers_str, period="6mo", group_by='ticker', session=session, threads=True)
+        data = yf.download(tickers_str, period="6mo", group_by='ticker', threads=True)
     except Exception as e:
         print(f"Batch download failed: {e}")
         return []

@@ -136,13 +136,6 @@ def get_strategy_metrics(code):
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
-
-# Fix for yfinance 401 Error
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-})
 
 def get_market_trend():
     """
@@ -150,7 +143,7 @@ def get_market_trend():
     Returns a dictionary with trend status and color.
     """
     try:
-        ticker = yf.Ticker("^N225", session=session)
+        ticker = yf.Ticker("^N225")
         hist = ticker.history(period="3mo")
         
         if hist.empty:
