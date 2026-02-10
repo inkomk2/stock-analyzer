@@ -285,75 +285,30 @@ def get_scored_stocks(status_callback=None):
     Analyzes all tickers and returns sorted results.
     status_callback: function(float) to report progress (0.0 to 1.0)
     """
-    import time
-    
     results = []
     
-    # Chunked Batch Request (Reliability)
-    # Split into chunks of 50 to avoid massive request blocking
-    chunk_size = 50
-    ticker_chunks = [tickers[i:i + chunk_size] for i in range(0, len(tickers), chunk_size)]
+    # Reverting to ThreadPoolExecutor (max_workers=4)
+    # Batch yf.download is unreliable on Cloud (Empty Data).
+    # ThreadPool with new yfinance (curl_cffi) should be faster and safer than sequential.
     
-    print(f"Processing {len(ticker_chunks)} chunks...")
+    print("Starting ThreadPool analysis (max_workers=4)...")
     
-    all_data_frames = []
-    
-    for i, chunk in enumerate(ticker_chunks):
-        chunk_str = " ".join([f"{code}.T" for code in chunk])
-        print(f"Downloading chunk {i+1}/{len(ticker_chunks)}...")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(analyze_stock, code): code for code in tickers}
+        total_futures = len(futures)
         
-        try:
-            # Download chunk
-            # threads=True is default. group_by='ticker'
-            data = yf.download(chunk_str, period="6mo", group_by='ticker', threads=True)
+        for i, future in enumerate(futures):
+            code = futures[future]
+            try:
+                res = future.result()
+                if res:
+                    results.append(res)
+            except Exception as e:
+                print(f"Error analyzing {code}: {e}")
             
-            if not data.empty:
-                # Store data or process immediately
-                # For simplicity, we'll iterate the chunk immediately
+            if status_callback:
+                status_callback((i + 1) / total_futures)
                 
-                for code in chunk:
-                    try:
-                        ticker_key = f"{code}.T"
-                        hist = None
-                        
-                        # Handle MultiIndex vs Single Index
-                        if isinstance(data.columns, pd.MultiIndex):
-                            if ticker_key in data.columns.levels[0]:
-                                hist = data[ticker_key].copy()
-                        else:
-                            # If single ticker in chunk (last chunk?)
-                            if len(chunk) == 1 and 'Close' in data.columns:
-                                hist = data.copy()
-                            elif ticker_key in data.columns: # Rare case
-                                hist = data[ticker_key].copy() # Impossible if not MultiIndex usually
-                        
-                        if hist is None or hist.empty:
-                            continue
-
-                        # Check for NaN in recent data
-                        if hist['Close'].isna().iloc[-1]:
-                            continue
-                        
-                        hist.dropna(how='all', inplace=True)
-                        if len(hist) < 25: continue
-
-                        res = analyze_stock(code, hist_data=hist)
-                        if res: results.append(res)
-                            
-                    except Exception as e:
-                        # print(f"Error {code}: {e}")
-                        pass
-            
-            # Sleep between chunks to be nice
-            if i < len(ticker_chunks) - 1:
-                time.sleep(2.0)
-                
-        except Exception as e:
-            print(f"Chunk {i+1} failed: {e}")
-            
-        if status_callback: 
-            status_callback((i + 1) / len(ticker_chunks))
-            
     # Sort by Score Descending
     results.sort(key=lambda x: x['Score'], reverse=True)
     return results
