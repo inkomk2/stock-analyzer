@@ -156,30 +156,36 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', pbr)
             per = fundamentals.get('per', per)
 
-        # --- SCORING LOGIC (AI Balanced Swing Model) ---
+        # --- SCORING LOGIC (v6.0 High-End Filter) ---
         score_trend = 0
         score_mom = 0
         score_vol = 0
         score_fund = 0
         score_rr = 0
         
-        # A. Trend (Max 45) - The Foundation
-        if current_price > ma25: score_trend += 10
-        if ma25 > ma25_prev: score_trend += 10       # Uptrend Slope
-        if ma5 > ma25: score_trend += 10             # Golden Cross / Strong
-        if current_price > kumo_top: score_trend += 5
-        if macd_val > signal_val: score_trend += 5
+        # A. Trend (Max 45) - Requires "Perfect Order" for high score
+        # Base (Easy)
+        if current_price > ma25: score_trend += 5
+        if ma25 > ma25_prev: score_trend += 5
+        if ma5 > ma25: score_trend += 5
         if current_price > ma75: score_trend += 5
         
-        # B. Momentum (Max 25) - The Driver
-        if 55 <= rsi <= 72: score_mom += 25          # Perfect Swing Zone
-        elif 50 <= rsi < 55: score_mom += 15         # Warming Up
-        elif 72 < rsi <= 78: score_mom += 15         # Very Strong
-        elif 40 <= rsi < 50: score_mom += 5          # Reset/Weak
-        elif rsi > 80: score_mom -= 10               # Danger Zone
+        # Advanced (Hard)
+        if current_price > ma5 and ma5 > ma25 and ma25 > ma75:
+            score_trend += 15 # Perfect Order Bonus
+            
+        # Supplement
+        if current_price > kumo_top: score_trend += 5
+        if macd_val > signal_val: score_trend += 5
         
-        # C. Volume (Max 15) - The Fuel
-        # Check for Panic Selling (High Volume + Sharp Drop)
+        # B. Momentum (Max 25) - Narrowed Sweet Spot
+        if 58 <= rsi <= 72: score_mom += 25          # The "Explosion" Zone
+        elif 52 <= rsi < 58: score_mom += 10         # Warming Up (Lowered)
+        elif 72 < rsi <= 80: score_mom += 5          # Getting Hot
+        elif rsi > 80: score_mom -= 10               # Danger
+        
+        # C. Volume (Max 15) - Strict (No points for normal volume)
+        # Check for Panic Selling
         daily_ret = 0.0
         try:
             prev_close = hist['Close'].iloc[-2]
@@ -188,20 +194,21 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pass
 
         if daily_ret < -0.03 and vol_ratio > 1.5:
-             score_vol -= 20 # Circuit Breaker (Panic Sell)
+             score_vol -= 20 # Panic Penalty
         else:
-             # Volume is fuel. More is generally better if not panic.
-             # 1.0x -> 5pts, 2.0x -> 10pts, 3.0x -> 15pts
-             vol_points = int(vol_ratio * 5)
-             score_vol = min(15, vol_points)
-             if vol_ratio >= 1.0 and score_vol < 3: score_vol = 3
+             # Only reward EXCESS volume. 
+             # Ratio 1.0 -> 0pts. Ratio 1.5 -> 5pts. Ratio 2.5 -> 15pts.
+             if vol_ratio > 1.0:
+                 vol_points = int((vol_ratio - 1.0) * 10)
+                 score_vol = min(15, vol_points)
+             else:
+                 score_vol = 0
 
-        # D. Fundamental (Max 5) - The Safety Net
-        # Just a sanity check. If it's not terribly expensive, give points.
-        if (0 < pbr < 1.5) or (0 < per < 25):
+        # D. Fundamental (Max 5) - Strict
+        if (0 < pbr < 1.2) or (0 < per < 20):
             score_fund += 5
         
-        # E. Risk Reward (Max 10) - The Strategy
+        # E. Risk Reward (Max 10)
         try:
             recent_high = hist['High'].iloc[-60:].max()
             
@@ -221,8 +228,8 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             
             rr = upside / downside
             
-            # Linear score: RR 3.0 -> ~10pts
-            rr_points = int(rr * 3.5)
+            # RR 3.0 -> ~9pts
+            rr_points = int(rr * 3.0)
             score_rr = min(10, rr_points)
             
         except:
@@ -231,8 +238,8 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         # Cap score
         total_score = score_trend + score_mom + score_vol + score_fund + score_rr
         
-        # Penalty for clear downtrend
-        if ma25 < ma25_prev: total_score -= 5
+        # Heavy Penalty for Downtrend Slope
+        if ma25 < ma25_prev: total_score -= 10
         
         score = min(100, int(total_score))
         if score < 0: score = 0
