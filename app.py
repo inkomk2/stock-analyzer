@@ -212,6 +212,7 @@ def render_ranking_view(scored_stocks):
                 except:
                     pass
 
+            rank_short.append({
                 "順位": i + 1,
                 "コード": s['Code'],
                 "銘柄": f"{get_stock_name(s['Code'])} ({s['Code']})",
