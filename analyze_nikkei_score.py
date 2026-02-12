@@ -244,6 +244,44 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         score = min(100, int(total_score))
         if score < 0: score = 0
 
+        # --- SHORT-TERM SCORING (For "Market Buy" / Day Trade) ---
+        score_short = 0
+        try:
+            # 1. 3-Day Power (Max 30)
+            close_3d = hist['Close'].iloc[-4]
+            ret_3d = (current_price - close_3d) / close_3d
+            if ret_3d > 0.10: score_short += 30
+            elif ret_3d > 0.05: score_short += 20
+            elif ret_3d > 0.03: score_short += 10
+            
+            # 2. Volume Blast (Max 30)
+            if vol_ratio > 3.0: score_short += 30
+            elif vol_ratio > 2.0: score_short += 20
+            elif vol_ratio > 1.3: score_short += 10
+            
+            # 3. Candle Strength (Max 20)
+            open_price = hist['Open'].iloc[-1]
+            high_price = hist['High'].iloc[-1]
+            low_price = hist['Low'].iloc[-1]
+            range_len = high_price - low_price
+            if range_len > 0:
+                body_len = abs(current_price - open_price)
+                ratio = body_len / range_len
+                # Green Candle & Strong Body
+                if current_price > open_price:
+                    if ratio > 0.8: score_short += 20 # Marubozu-like
+                    elif ratio > 0.5: score_short += 10
+            
+            # 4. Immediate Trend (Max 20)
+            if current_price > ma5: score_short += 10
+            ma5_prev = hist['Close'].rolling(window=5).mean().iloc[-2]
+            if ma5 > ma5_prev: score_short += 10
+            
+        except:
+             score_short = 0
+
+        score_short = min(100, int(score_short))
+
         # --- COMMENTARY GENERATION ---
         commentary = []
         commentary.append(f"【総合評価】 スコア: {score}点")
@@ -315,6 +353,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             "Code": code,
             "Price": current_price,
             "Score": score,
+            "ScoreShort": score_short, # NEW
             "MA25": ma25,
             "Deviation": ((current_price - ma25) / ma25) * 100,
             "RSI": rsi,
@@ -328,8 +367,8 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
                 "Trend": int(score_trend),
                 "Momentum": int(score_mom),
                 "Volume": int(score_vol),
-                "Fundamentals": int(score_fund),
-                "RiskReward": int(score_rr)
+                "Fundamental": int(score_fund),
+                "RR": int(score_rr)
             }
         }
         

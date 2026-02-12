@@ -104,6 +104,74 @@ def get_stock_name(code):
 def load_ranking_data():
     return get_scored_stocks()
 
+# --- Helper Function for Ranking Rendering ---
+def render_ranking_view(scored_stocks):
+    st.header("🏆 AIスコアランキング")
+    
+    if not scored_stocks:
+        st.info("データがありません。分析を実行してください。")
+        return
+
+    # Create Tabs
+    tab1, tab2 = st.tabs(["📈 スイング (本命)", "🚀 短期急騰 (デイ/スキャ)"])
+    
+    # --- TAB 1: SWING (Main) ---
+    with tab1:
+        st.caption("※トレンドとモメンタムのバランスを重視した、数日〜数週間向けのランキング")
+        # Sort by Swing Score
+        swing_stocks = sorted(scored_stocks, key=lambda x: x['Score'], reverse=True)
+        
+        rank_data = []
+        for i, s in enumerate(swing_stocks):
+            # Check for earnings within 14 days
+            earnings_date = get_next_earnings_date(s['Code'])
+            note = ""
+            if earnings_date:
+                from datetime import datetime
+                try:
+                    ed = datetime.strptime(earnings_date, "%Y-%m-%d")
+                    days_left = (ed - datetime.now()).days
+                    if 0 <= days_left <= 14:
+                        note = f"⚠️決算 {days_left}日後"
+                except:
+                    pass
+            
+            rank_data.append({
+                "順位": i + 1,
+                "コード": s['Code'],
+                "銘柄名": get_stock_name(s['Code']),
+                "現在値": f"{s['Price']:,.0f}",
+                "スコア": s['Score'],
+                "トレンド": "上昇" if s['MA25'] < s['Price'] else "下降",
+                "R/R": f"{s['RR']:.2f}",
+                "備考": note
+            })
+            
+        df = pd.DataFrame(rank_data)
+        st.dataframe(df, height=600, use_container_width=True)
+
+    # --- TAB 2: SHORT-TERM (Burst) ---
+    with tab2:
+        st.caption("※直近3日間の値動き、出来高急増、ローソク足の強さを重視した「今」動いている銘柄")
+        
+        # Sort by ScoreShort
+        short_stocks = [s for s in scored_stocks if s.get('ScoreShort', 0) > 0]
+        short_stocks.sort(key=lambda x: x.get('ScoreShort', 0), reverse=True)
+        
+        rank_short = []
+        for i, s in enumerate(short_stocks):
+            rank_short.append({
+                "順位": i + 1,
+                "コード": s['Code'],
+                "銘柄名": get_stock_name(s['Code']),
+                "現在値": f"{s['Price']:,.0f}",
+                "短期スコア": s.get('ScoreShort', 0),
+                "急騰要因": s.get('Details', '特になし')
+            })
+            
+        df_short = pd.DataFrame(rank_short)
+        st.dataframe(df_short, height=600, use_container_width=True)
+
 # --- Helper Function for Analysis Rendering ---
 def render_analysis_view(code_input):
     """Renders the analysis view for a given code."""
