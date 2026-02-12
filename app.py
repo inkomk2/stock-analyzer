@@ -423,63 +423,6 @@ def fetch_earnings_map(codes):
                 earnings_map[code] = "-"
     return earnings_map
 
-# --- Initialize Session State for Drill-down ---
-if 'ranking_target' not in st.session_state:
-    st.session_state.ranking_target = None
-
-# --- Main Layout (Tabs) ---
-tab1, tab2, tab3 = st.tabs(["📊 ランキング", "🔍 詳細分析", "⚙️ 設定"])
-
-# --- TAB 1: RANKING ---
-with tab1:
-    # Drill-down View
-    if st.session_state.ranking_target:
-        if st.button("⬅️ ランキングに戻る"):
-            st.session_state.ranking_target = None
-            st.rerun()
-            
-        render_analysis_view(st.session_state.ranking_target)
-        
-    # List View (Normal)
-    else:
-        st.header("日経225 スコアランキング")
-        
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            if st.button("🔄 ランキング更新"):
-                st.cache_data.clear()
-                st.rerun()
-
-        try:
-            with st.spinner("市場データを分析中... (1-2分かかります)"):
-                scores = load_ranking_data()
-            
-            # Render the Rebound Ranking (v2)
-            render_ranking_view_v2(scores)
-                
-        except Exception as e:
-            st.error(f"データ読み込みエラー: {e}")
-
-# --- TAB 2: ANALYZER ---
-with tab2:
-    st.header("銘柄詳細分析")
-    
-    default_code = "9984"
-    code_input = st.text_input("銘柄コードを入力 (例: 9984)", default_code)
-    
-    if st.button("分析開始"):
-        with st.spinner(f"{code_input} を詳細分析中..."):
-            render_analysis_view(code_input)
-
-# --- TAB 3: SETUP ---
-with tab3:
-    st.header("モバイルアクセスの手順")
-    st.markdown("""
-    1.  **ngrokの起動**: 
-        アプリ起動時に表示された黒い画面にURLが表示されています。
-    2.  **スマホでアクセス**: 
-        URL (`https://....ngrok-free.app`) をコピーして、スマホのブラウザで開いてください。
-    """)
 
 # --- v2: Rebound Strategy Ranking View ---
 def render_ranking_view_v2(scored_stocks):
@@ -565,3 +508,63 @@ def render_ranking_view_v2(scored_stocks):
         target_code = df.iloc[row_idx]['コード']
         st.session_state.ranking_target = target_code
         st.rerun()
+
+# --- Initialize Session State for Drill-down ---
+if 'ranking_target' not in st.session_state:
+    st.session_state.ranking_target = None
+
+# --- Main Layout (Tabs) ---
+tab1, tab2, tab3 = st.tabs(["📊 ランキング", "🔍 詳細分析", "⚙️ 設定"])
+
+# --- TAB 1: RANKING ---
+with tab1:
+    # Drill-down View
+    if st.session_state.ranking_target:
+        if st.button("⬅️ ランキングに戻る"):
+            st.session_state.ranking_target = None
+            st.rerun()
+            
+        render_analysis_view(st.session_state.ranking_target)
+        
+    # List View (Normal)
+    else:
+        st.header("日経225 スコアランキング")
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            if st.button("🔄 ランキング更新"):
+                st.cache_data.clear()
+                st.rerun()
+
+        try:
+            with st.spinner("市場データを分析中... (1-2分かかります)"):
+                scores = load_ranking_data()
+            
+            # Render the Rebound Ranking (v2)
+            render_ranking_view_v2(scores)
+                
+        except Exception as e:
+            st.error(f"データ読み込みエラー: {e}")
+
+# --- TAB 2: ANALYZER ---
+with tab2:
+    st.header("銘柄詳細分析")
+    
+    default_code = "9984"
+    code_input = st.text_input("銘柄コードを入力 (例: 9984)", default_code)
+    
+    if st.button("分析開始"):
+        with st.spinner(f"{code_input} を詳細分析中..."):
+            render_analysis_view(code_input)
+
+# --- TAB 3: SETUP ---
+with tab3:
+    st.header("モバイルアクセスの手順")
+    st.markdown("""
+    1.  **ngrokの起動**: 
+        アプリ起動時に表示された黒い画面にURLが表示されています。
+    2.  **スマホでアクセス**: 
+        URL (`https://....ngrok-free.app`) をコピーして、スマホのブラウザで開いてください。
+    """)
+
+
