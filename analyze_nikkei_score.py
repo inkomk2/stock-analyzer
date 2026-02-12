@@ -156,7 +156,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', pbr)
             per = fundamentals.get('per', per)
 
-        # --- v7.0 REBOUND STRATEGY SCORING ---
+        # --- v7.1 REBOUND STRATEGY SCORING (Stricter) ---
         # Goal: Find stocks in uptrend that have dipped to MA25/MA75
         
         score_trend = 0
@@ -165,11 +165,11 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         
         ma75_prev = hist['Close'].rolling(window=75).mean().iloc[-2]
         
-        # 1. Trend Health (Max 30) - Trend MUST be UP
+        # 1. Trend Health (Max 20) - Trend MUST be UP
         if ma75 > ma75_prev:
-            score_trend += 15
+            score_trend += 10
         if ma25 > ma25_prev:
-            score_trend += 15
+            score_trend += 10
             
         # Heavy Penalty: If Long-term trend is down, kill the score
         if ma75 < ma75_prev:
@@ -180,35 +180,33 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         dev_25 = (current_price - ma25) / ma25 * 100
         dev_75 = (current_price - ma75) / ma75 * 100
         
-        if -3.0 <= dev_25 <= 1.5:
+        # Stricter Ranges for v7.1
+        if -2.5 <= dev_25 <= 1.0:
             score_dip = 50 # Perfect Touch on MA25
-        elif 1.5 < dev_25 <= 3.5:
-            score_dip = 40 # Shallow Dip
-        elif dev_25 < -3.0 and -3.0 <= dev_75 <= 1.5:
-            score_dip = 45 # Deep Dip to MA75 (Rebound)
-        elif 3.5 < dev_25 <= 5.5:
-            score_dip = 20 # A bit high
+        elif 1.0 < dev_25 <= 3.0:
+            score_dip = 30 # Shallow Dip (Reduced from 40)
+        elif dev_25 < -2.5 and -2.5 <= dev_75 <= 1.5:
+            score_dip = 40 # Deep Dip to MA75 (Rebound)
+        elif 3.0 < dev_25 <= 5.0:
+            score_dip = 10 # A bit high (Reduced)
         else:
             score_dip = 0 # Too high or broken
 
-        # 3. Timing (Max 20) - RSI should be cool
-        if 30 <= rsi <= 55:
-            score_timing = 20 # Ideal Dip Zone
-        elif 55 < rsi <= 65:
+        # 3. Timing (Max 30) - RSI should be cool
+        if 30 <= rsi <= 50:
+            score_timing = 30 # Ideal Dip Zone (Boosted)
+        elif 50 < rsi <= 60:
             score_timing = 10 # Neutral
-        elif rsi > 70:
-            score_timing = -10 # Overheated
-        
-        # (RR logic removed for v7.0)
-        score_rr = 0
-
+        elif rsi > 65:
+            score_timing = -20 # Overheated (Penalty)
+            
         total_score = score_trend + score_dip + score_timing
         
         # Final Adjustments
         score = min(100, int(total_score))
         if score < 0: score = 0
-
-        # --- v7.0 Clean Up ---
+        
+        # --- v7.1 Clean Up ---
         score_short = 0 
         
         # --- FEATURE TAGS & REASON ---
@@ -216,15 +214,15 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         if score >= 80: short_reason.append("絶好の押し目")
         elif score >= 60: short_reason.append("押し目圏内")
         
-        if score_trend >= 30: short_reason.append("上昇トレンド")
-        if score_dip >= 45: short_reason.append("MAタッチ")
-        if 30 <= rsi <= 45: short_reason.append("売られすぎ")
+        if score_trend >= 20: short_reason.append("上昇トレンド")
+        if score_dip >= 40: short_reason.append("MAタッチ")
+        if 30 <= rsi <= 50: short_reason.append("売られすぎ")
 
         # --- COMMENTARY GENERATION ---
         commentary = []
-        commentary.append(f"【判定】 スコア: {score}点 (反発狙い)")
+        commentary.append(f"【判定】 スコア: {score}点 (反発狙い v7.1)")
         
-        trend_str = "上昇中" if score_trend >= 30 else "弱い"
+        trend_str = "上昇中" if score_trend >= 20 else "弱い"
         commentary.append(f"・トレンド: {trend_str} (長期線上向き)")
         
         if score_dip >= 40:
@@ -235,9 +233,9 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
              commentary.append(f"・位置: 乖離大/対象外")
 
         commentary.append("【スコア内訳】")
-        commentary.append(f"・トレンド: {int(score_trend)}/30")
+        commentary.append(f"・トレンド: {int(score_trend)}/20")
         commentary.append(f"・押し目度: {int(score_dip)}/50")
-        commentary.append(f"・タイミング: {int(score_timing)}/20")
+        commentary.append(f"・タイミング: {int(score_timing)}/30")
         
         final_commentary = "\n".join(commentary)
         
