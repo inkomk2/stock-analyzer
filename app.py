@@ -454,8 +454,8 @@ with tab1:
             with st.spinner("市場データを分析中... (1-2分かかります)"):
                 scores = load_ranking_data()
             
-            # Render the TABS inside this view
-            render_ranking_view(scores)
+            # Render the Rebound Ranking (v2)
+            render_ranking_view_v2(scores)
                 
         except Exception as e:
             st.error(f"データ読み込みエラー: {e}")
@@ -480,3 +480,88 @@ with tab3:
     2.  **スマホでアクセス**: 
         URL (`https://....ngrok-free.app`) をコピーして、スマホのブラウザで開いてください。
     """)
+
+# --- v2: Rebound Strategy Ranking View ---
+def render_ranking_view_v2(scored_stocks):
+    st.header("🏆 反発・押し目狙いランキング")
+    st.caption("※上昇トレンド中の「押し目（MA25接近）」や「リバウンド局面」にある銘柄を抽出")
+    
+    if not scored_stocks:
+        st.info("データがありません。分析を実行してください。")
+        return
+
+    # Mobile Toggle
+    mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
+    
+    # Sort by Score
+    ranking_data = sorted(scored_stocks, key=lambda x: x['Score'], reverse=True)
+    
+    rank_list = []
+    for i, s in enumerate(ranking_data):
+        # Earnings Check
+        earnings_date = get_next_earnings_date(s['Code'])
+        note = ""
+        if earnings_date:
+            from datetime import datetime
+            try:
+                ed = datetime.strptime(earnings_date, "%Y-%m-%d")
+                days_left = (ed - datetime.now()).days
+                if 0 <= days_left <= 14:
+                    note = f"⚠️{days_left}日後"
+                elif 15 <= days_left <= 30:
+                    note = f"{days_left}日後"
+            except:
+                pass
+                
+        rank_list.append({
+            "順位": i + 1,
+            "コード": s['Code'],
+            "銘柄": f"{get_stock_name(s['Code'])} ({s['Code']})",
+            "現在値": f"{s['Price']:,.0f}",
+            "スコア": s['Score'],
+            "乖離率": s.get('Deviation', 0), 
+            "RSI": s.get('RSI', 0),
+            "決算": note,
+            "選定理由": s.get('Details', '')
+        })
+        
+    df = pd.DataFrame(rank_list)
+    
+    # Column Config
+    if mobile_mode:
+        cols = ["順位", "銘柄", "スコア", "乖離率", "現在値", "決算"]
+        cfg = {
+            "順位": st.column_config.NumberColumn("#", width="small"),
+            "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
+            "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"),
+            "乖離率": st.column_config.NumberColumn("MA乖離", format="%.1f%%", width="small"),
+            "現在値": st.column_config.TextColumn("株価", width="small"),
+            "決算": st.column_config.TextColumn("決算", width="small"),
+        }
+    else:
+        cols = ["順位", "コード", "銘柄", "スコア", "乖離率", "RSI", "現在値", "決算", "選定理由"]
+        cfg = {
+             "順位": st.column_config.NumberColumn("Rank", width="small"),
+             "スコア": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+             "乖離率": st.column_config.NumberColumn("Diff(MA25)", format="%.1f%%"),
+             "RSI": st.column_config.NumberColumn("RSI", format="%.1f"),
+             "決算": st.column_config.TextColumn("Earnings", width="small"),
+             "選定理由": st.column_config.TextColumn("Details", width="large")
+        }
+
+    event = st.dataframe(
+        df[cols],
+        column_config=cfg,
+        height=800,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="df_ranking_v2"
+    )
+
+    if len(event.selection.rows) > 0:
+        row_idx = event.selection.rows[0]
+        target_code = df.iloc[row_idx]['コード']
+        st.session_state.ranking_target = target_code
+        st.rerun()

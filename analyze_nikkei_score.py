@@ -156,219 +156,109 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', pbr)
             per = fundamentals.get('per', per)
 
-        # --- SCORING LOGIC (v6.0 High-End Filter) ---
+        # --- v7.0 REBOUND STRATEGY SCORING ---
+        # Goal: Find stocks in uptrend that have dipped to MA25/MA75
+        
         score_trend = 0
-        score_mom = 0
-        score_vol = 0
-        score_fund = 0
-        score_rr = 0
+        score_dip = 0
+        score_timing = 0
         
-        # A. Trend (Max 45) - Requires "Perfect Order" for high score
-        # Base (Easy)
-        if current_price > ma25: score_trend += 5
-        if ma25 > ma25_prev: score_trend += 5
-        if ma5 > ma25: score_trend += 5
-        if current_price > ma75: score_trend += 5
+        ma75_prev = hist['Close'].rolling(window=75).mean().iloc[-2]
         
-        # Advanced (Hard)
-        if current_price > ma5 and ma5 > ma25 and ma25 > ma75:
-            score_trend += 15 # Perfect Order Bonus
+        # 1. Trend Health (Max 30) - Trend MUST be UP
+        if ma75 > ma75_prev:
+            score_trend += 15
+        if ma25 > ma25_prev:
+            score_trend += 15
             
-        # Supplement
-        if current_price > kumo_top: score_trend += 5
-        if macd_val > signal_val: score_trend += 5
+        # Heavy Penalty: If Long-term trend is down, kill the score
+        if ma75 < ma75_prev:
+            score_trend = -100 # Discard
         
-        # B. Momentum (Max 25) - Narrowed Sweet Spot
-        if 58 <= rsi <= 72: score_mom += 25          # The "Explosion" Zone
-        elif 52 <= rsi < 58: score_mom += 10         # Warming Up (Lowered)
-        elif 72 < rsi <= 80: score_mom += 5          # Getting Hot
-        elif rsi > 80: score_mom -= 10               # Danger
+        # 2. Dip / Rebound Potential (Max 50)
+        # We want price CLOSE to MA25 or MA75
+        dev_25 = (current_price - ma25) / ma25 * 100
+        dev_75 = (current_price - ma75) / ma75 * 100
         
-        # C. Volume (Max 15) - Strict (No points for normal volume)
-        # Check for Panic Selling
-        daily_ret = 0.0
-        try:
-            prev_close = hist['Close'].iloc[-2]
-            daily_ret = (current_price - prev_close) / prev_close
-        except:
-            pass
-
-        if daily_ret < -0.03 and vol_ratio > 1.5:
-             score_vol -= 20 # Panic Penalty
+        if -3.0 <= dev_25 <= 1.5:
+            score_dip = 50 # Perfect Touch on MA25
+        elif 1.5 < dev_25 <= 3.5:
+            score_dip = 40 # Shallow Dip
+        elif dev_25 < -3.0 and -3.0 <= dev_75 <= 1.5:
+            score_dip = 45 # Deep Dip to MA75 (Rebound)
+        elif 3.5 < dev_25 <= 5.5:
+            score_dip = 20 # A bit high
         else:
-             # Only reward EXCESS volume. 
-             # Ratio 1.0 -> 0pts. Ratio 1.5 -> 5pts. Ratio 2.5 -> 15pts.
-             if vol_ratio > 1.0:
-                 vol_points = int((vol_ratio - 1.0) * 10)
-                 score_vol = min(15, vol_points)
-             else:
-                 score_vol = 0
+            score_dip = 0 # Too high or broken
 
-        # D. Fundamental (Max 5) - Strict
-        if (0 < pbr < 1.2) or (0 < per < 20):
-            score_fund += 5
+        # 3. Timing (Max 20) - RSI should be cool
+        if 30 <= rsi <= 55:
+            score_timing = 20 # Ideal Dip Zone
+        elif 55 < rsi <= 65:
+            score_timing = 10 # Neutral
+        elif rsi > 70:
+            score_timing = -10 # Overheated
         
-        # E. Risk Reward (Max 10)
-        try:
-            recent_high = hist['High'].iloc[-60:].max()
-            
-            # Virtual Entry Logic
-            if current_price > ma25 and rsi >= 50:
-                entry_ref = ma5
-            elif current_price > ma25:
-                entry_ref = ma25
-            else:
-                entry_ref = current_price
-                
-            StopLoss = entry_ref - (2 * atr)
-            upside = recent_high - entry_ref
-            if upside <= 0: upside = 4 * atr
-            downside = entry_ref - StopLoss
-            if downside <= 0: downside = 0.1
-            
-            rr = upside / downside
-            
-            # RR 3.0 -> ~9pts
-            rr_points = int(rr * 3.0)
-            score_rr = min(10, rr_points)
-            
-        except:
-            score_rr = 0
+        # (RR logic removed for v7.0)
+        score_rr = 0
 
-        # Cap score
-        total_score = score_trend + score_mom + score_vol + score_fund + score_rr
+        total_score = score_trend + score_dip + score_timing
         
-        # Heavy Penalty for Downtrend Slope
-        if ma25 < ma25_prev: total_score -= 10
-        
+        # Final Adjustments
         score = min(100, int(total_score))
         if score < 0: score = 0
 
-        # --- SHORT-TERM SCORING (For "Market Buy" / Day Trade) ---
-        score_short = 0
-        try:
-            # 1. 3-Day Power (Max 30)
-            close_3d = hist['Close'].iloc[-4]
-            ret_3d = (current_price - close_3d) / close_3d
-            if ret_3d > 0.10: score_short += 30
-            elif ret_3d > 0.05: score_short += 20
-            elif ret_3d > 0.03: score_short += 10
-            
-            # 2. Volume Blast (Max 30)
-            if vol_ratio > 3.0: score_short += 30
-            elif vol_ratio > 2.0: score_short += 20
-            elif vol_ratio > 1.3: score_short += 10
-            
-            # 3. Candle Strength (Max 20)
-            open_price = hist['Open'].iloc[-1]
-            high_price = hist['High'].iloc[-1]
-            low_price = hist['Low'].iloc[-1]
-            range_len = high_price - low_price
-            if range_len > 0:
-                body_len = abs(current_price - open_price)
-                ratio = body_len / range_len
-                # Green Candle & Strong Body
-                if current_price > open_price:
-                    if ratio > 0.8: score_short += 20 # Marubozu-like
-                    elif ratio > 0.5: score_short += 10
-            
-            # 4. Immediate Trend (Max 20)
-            if current_price > ma5: score_short += 10
-            ma5_prev = hist['Close'].rolling(window=5).mean().iloc[-2]
-            if ma5 > ma5_prev: score_short += 10
-            
-        except:
-             score_short = 0
-
-        score_short = min(100, int(score_short))
+        # --- v7.0 Clean Up ---
+        score_short = 0 
+        
+        # --- FEATURE TAGS & REASON ---
+        short_reason = []
+        if score >= 80: short_reason.append("絶好の押し目")
+        elif score >= 60: short_reason.append("押し目圏内")
+        
+        if score_trend >= 30: short_reason.append("上昇トレンド")
+        if score_dip >= 45: short_reason.append("MAタッチ")
+        if 30 <= rsi <= 45: short_reason.append("売られすぎ")
 
         # --- COMMENTARY GENERATION ---
         commentary = []
-        commentary.append(f"【総合評価】 スコア: {score}点")
-        commentary.append(f"現在値: {current_price:,.0f}円")
+        commentary.append(f"【判定】 スコア: {score}点 (反発狙い)")
         
-        # Trend
-        trend_desc = "上昇" if current_price > ma25 else "下落"
-        cloud_desc = "雲上" if current_price > kumo_top else ("雲下" if current_price < kumo_bottom else "雲中")
-        commentary.append(f"トレンド: {trend_desc} / 一目均衡表: {cloud_desc}")
+        trend_str = "上昇中" if score_trend >= 30 else "弱い"
+        commentary.append(f"・トレンド: {trend_str} (長期線上向き)")
         
-        # MACD
-        macd_desc = "GC" if macd_val > signal_val else "DC"
-        commentary.append(f"MACD: {macd_desc}")
-        
-        # Bollinger
-        bb_desc = "過熱" if bb_pos > 1.0 else ("売られすぎ" if bb_pos < 0.0 else "正常")
-        commentary.append(f"ボリンジャー: {bb_desc}")
-        
-        commentary.append(f"RSI: {rsi:.1f}")
-        
-        commentary.append(f"出来高: 通常比 {vol_ratio:.1f}倍 ({'急増' if vol_ratio>1.5 else '通常'})")
-        
-        # Fundamentals
-        if pbr == 0 and per == 0:
-             commentary.append("PBR/PER: --- (データ取得不可)")
+        if score_dip >= 40:
+             commentary.append(f"・位置: 理想的な押し目 (MA25乖離 {dev_25:.1f}%)")
+        elif score_dip >= 20:
+             commentary.append(f"・位置: 許容範囲")
         else:
-             pbr_str = f"{pbr:.2f}倍" if pbr > 0 else "-"
-             per_str = f"{per:.1f}倍" if per > 0 else "-"
-             commentary.append(f"PBR: {pbr_str} / PER: {per_str}")
-             
-        commentary.append(f"R/R比: {rr:.2f} (想定エントリー基準)")
-        
-        commentary.append("")
-        commentary.append(f"HV(ボラティリティ): {hv:.1f}%")
-        
-        # Breakdown for Report
-        commentary.append("")
+             commentary.append(f"・位置: 乖離大/対象外")
+
         commentary.append("【スコア内訳】")
-        commentary.append(f"・トレンド: {int(score_trend)}/45")
-        commentary.append(f"・モメンタム: {int(score_mom)}/25")
-        commentary.append(f"・出来高: {int(score_vol)}/15")
-        commentary.append(f"・ファンダ: {int(score_fund)}/5")
-        commentary.append(f"・R/R: {int(score_rr)}/10")
-
-
-
-        commentary.append("※投資判断は自己責任で行ってください。")
+        commentary.append(f"・トレンド: {int(score_trend)}/30")
+        commentary.append(f"・押し目度: {int(score_dip)}/50")
+        commentary.append(f"・タイミング: {int(score_timing)}/20")
         
         final_commentary = "\n".join(commentary)
-        
-        short_reason = []
-        if score >= 80: short_reason.append("激アツ")
-        elif score >= 70: short_reason.append("強気")
-        
-        # Panic Sell Detection
-        if daily_ret < -0.03 and vol_ratio > 1.5:
-            short_reason.append("投げ売り警戒")
-        
-        if ma25 > ma25_prev and current_price > ma25: short_reason.append("上昇トレンド")
-        if rsi >= 50 and rsi <= 75: short_reason.append("上昇モメンタム")
-        
-        # Good Volume
-        if vol_ratio > 1.5 and daily_ret >= -0.03: 
-            short_reason.append("出来高増")
-            
-        if 0 < pbr < 1.0: short_reason.append(f"低PBR({pbr:.2f})")
         
         return {
             "Code": code,
             "Price": current_price,
             "Score": score,
-            "ScoreShort": score_short, # NEW
+            "ScoreShort": score_short, # Deprecated
             "MA25": ma25,
-            "Deviation": ((current_price - ma25) / ma25) * 100,
+            "Deviation": dev_25, # MA25 Deviation
             "RSI": rsi,
             "PBR": pbr,
             "PER": per,
             "Yield": 0,
-            "RR": rr,
+            "RR": 0,
             "Details": "、".join(short_reason) if short_reason else "特になし",
             "AnalysisSummary": final_commentary,
             "ScoreDetail": {
                 "Trend": int(score_trend),
-                "Momentum": int(score_mom),
-                "Volume": int(score_vol),
-                "Fundamental": int(score_fund),
-                "RR": int(score_rr)
+                "Dip": int(score_dip),
+                "Timing": int(score_timing)
             }
         }
         

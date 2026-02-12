@@ -40,27 +40,25 @@ def get_strategy_metrics(code):
     recent_high = hist['High'].iloc[-60:].max()
     
     # STRATEGY LOGIC (Dynamic)
-    # STRATEGY LOGIC (Dynamic Entry)
-    if current_price > ma5 and rsi >= 60:
-        # Super Strong -> Don't wait, buy now
-        entry_price = current_price
-        dip_desc = "Momentum Buy (成行)"
-    elif current_price > ma25 and rsi >= 45: # Slightly lowered threshold
-        # Strong Trend -> Wait for slight dip
-        entry_price = ma5
-        dip_desc = "Trend Follow (MA5)"
-    elif current_price > ma25:
-        # Moderate -> Wait for deep dip
+    # STRATEGY LOGIC (Rebound/Dip Focus)
+    if current_price > ma25:
+        # Uptrend: Aim for Dip to MA25
         entry_price = ma25
-        dip_desc = "Dip Buy (MA25)"
+        dip_desc = "押し目狙い (MA25)"
+        
+        # Exception: If very strong momentum, allow higher entry
+        if rsi > 60:
+             entry_price = ma5
+             dip_desc = "強気追随 (MA5)"
+             
     elif current_price > ma75:
-        # Broken Trend -> Rebound aim
+        # Correction Phase: Aim for Rebound at MA75
         entry_price = ma75
-        dip_desc = "Rebound (MA75)"
+        dip_desc = "反発狙い (MA75)"
     else:
-        # Oversold
-        entry_price = current_price
-        dip_desc = "Bottom Fishing"
+        # Below MA75: Trend might be broken, or deep bottom
+        entry_price = current_price * 0.98 # Place bid slightly lower
+        dip_desc = "底値模索 (要監視)"
         
     stop_loss = entry_price - (2 * atr)
     
