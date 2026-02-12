@@ -156,49 +156,50 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             pbr = fundamentals.get('pbr', pbr)
             per = fundamentals.get('per', per)
 
-        # --- v7.1 REBOUND STRATEGY SCORING (Stricter) ---
-        # Goal: Find stocks in uptrend that have dipped to MA25/MA75
+        # --- v7.2 REBOUND STRATEGY SCORING (Smooth) ---
+        # Goal: Continuous scoring distribution (no 10pt steps)
         
-        score_trend = 0
-        score_dip = 0
-        score_timing = 0
+        score_trend = 0.0
+        score_dip = 0.0
+        score_timing = 0.0
         
         ma75_prev = hist['Close'].rolling(window=75).mean().iloc[-2]
         
-        # 1. Trend Health (Max 20) - Trend MUST be UP
+        # 1. Trend Health (Max 20) - Binary is fine here
         if ma75 > ma75_prev:
             score_trend += 10
         if ma25 > ma25_prev:
             score_trend += 10
             
-        # Heavy Penalty: If Long-term trend is down, kill the score
         if ma75 < ma75_prev:
             score_trend = -100 # Discard
         
-        # 2. Dip / Rebound Potential (Max 50)
-        # We want price CLOSE to MA25 or MA75
+        # 2. Dip Potential (Max 50) - Continuous Curve
+        # Ideal Spot: -0.5% (Slightly below MA25)
+        
         dev_25 = (current_price - ma25) / ma25 * 100
         dev_75 = (current_price - ma75) / ma75 * 100
         
-        # Stricter Ranges for v7.1
-        if -2.5 <= dev_25 <= 1.0:
-            score_dip = 50 # Perfect Touch on MA25
-        elif 1.0 < dev_25 <= 3.0:
-            score_dip = 30 # Shallow Dip (Reduced from 40)
-        elif dev_25 < -2.5 and -2.5 <= dev_75 <= 1.5:
-            score_dip = 40 # Deep Dip to MA75 (Rebound)
-        elif 3.0 < dev_25 <= 5.0:
-            score_dip = 10 # A bit high (Reduced)
-        else:
-            score_dip = 0 # Too high or broken
+        # Calculate MA25 Score (Primary)
+        # Formula: 50 - |Deviation - (-0.5)| * Weight
+        # Weight 12 means: +/- 1% error = -12 pts.
+        raw_score_25 = 50 - (abs(dev_25 - (-0.5)) * 12)
+        
+        # Calculate MA75 Score (Secondary - Deep Dip)
+        # Center at -1.0% (Rebound zone), Max 40 pts
+        raw_score_75 = 40 - (abs(dev_75 - (-1.0)) * 8)
+        
+        score_dip = max(0, raw_score_25, raw_score_75)
 
-        # 3. Timing (Max 30) - RSI should be cool
-        if 30 <= rsi <= 50:
-            score_timing = 30 # Ideal Dip Zone (Boosted)
-        elif 50 < rsi <= 60:
-            score_timing = 10 # Neutral
-        elif rsi > 65:
-            score_timing = -20 # Overheated (Penalty)
+        # 3. Timing (Max 30) - Continuous Curve
+        # Ideal RSI: 40
+        
+        raw_score_timing = 30 - (abs(rsi - 40) * 0.8)
+        score_timing = max(0, raw_score_timing)
+        
+        # Overheat Penalty (Exponential)
+        if rsi > 65:
+            score_timing -= (rsi - 65) * 2 # -10pts at RSI 70
             
         total_score = score_trend + score_dip + score_timing
         
@@ -206,7 +207,7 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         score = min(100, int(total_score))
         if score < 0: score = 0
         
-        # --- v7.1 Clean Up ---
+        # --- v7.2 Clean Up ---
         score_short = 0 
         
         # --- FEATURE TAGS & REASON ---
@@ -220,17 +221,12 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
 
         # --- COMMENTARY GENERATION ---
         commentary = []
-        commentary.append(f"【判定】 スコア: {score}点 (反発狙い v7.1)")
+        commentary.append(f"【判定】 スコア: {score}点 (反発狙い v7.2)")
         
         trend_str = "上昇中" if score_trend >= 20 else "弱い"
-        commentary.append(f"・トレンド: {trend_str} (長期線上向き)")
-        
-        if score_dip >= 40:
-             commentary.append(f"・位置: 理想的な押し目 (MA25乖離 {dev_25:.1f}%)")
-        elif score_dip >= 20:
-             commentary.append(f"・位置: 許容範囲")
-        else:
-             commentary.append(f"・位置: 乖離大/対象外")
+        commentary.append(f"・トレンド: {trend_str}")
+        commentary.append(f"・MA25乖離: {dev_25:+.2f}%")
+        commentary.append(f"・RSI: {rsi:.1f}")
 
         commentary.append("【スコア内訳】")
         commentary.append(f"・トレンド: {int(score_trend)}/20")
