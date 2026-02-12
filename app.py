@@ -208,15 +208,29 @@ def render_ranking_view(scored_stocks):
             
         df_short = pd.DataFrame(rank_short)
         
-        # Simple Config for Short Term
-        event_short = st.dataframe(
-            df_short,
-            column_config={
+        # Column Config for Short Term
+        if mobile_mode:
+            # Select columns that exist in df_short
+            # df_short keys: "順位", "コード", "銘柄", "現在値", "短期スコア", "急騰要因"
+            cols_short = ["順位", "銘柄", "短期スコア", "現在値", "急騰要因"]
+            cfg_short = {
                 "順位": st.column_config.NumberColumn("#", width="small"),
                 "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                "短期スコア": st.column_config.ProgressColumn("点数", min_value=0, max_value=100, format="%d"),
-                "急騰要因": st.column_config.TextColumn("要因", width="large")
-            },
+                "短期スコア": st.column_config.NumberColumn("点数", format="%d", width="small"), # No Bar
+                "現在値": st.column_config.TextColumn("株価", width="small"),
+                "急騰要因": st.column_config.TextColumn("要因", width="small")
+            }
+        else:
+             cols_short = ["順位", "コード", "銘柄", "短期スコア", "現在値", "急騰要因"]
+             cfg_short = {
+                "順位": st.column_config.NumberColumn("Rank", width="small"),
+                "短期スコア": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "急騰要因": st.column_config.TextColumn("Details", width="large")
+            }
+
+        event_short = st.dataframe(
+            df_short[cols_short],
+            column_config=cfg_short,
             height=600,
             use_container_width=True,
             hide_index=True,
