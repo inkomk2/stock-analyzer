@@ -86,8 +86,7 @@ def get_strategy_metrics(code):
     plot_data = hist[['Open', 'High', 'Low', 'Close']].reset_index()
     plot_data['MA5'] = hist['Close'].rolling(window=5).mean().values
     plot_data['MA25'] = hist['Close'].rolling(window=25).mean().values
-    # Move ma25_prev calculation here if needed, or just ensure it exists.
-    # Placeholder for view_file check.
+    plot_data['MA75'] = hist['Close'].rolling(window=75).mean().values
     
     # --- Generate Text Report ---
     report_lines = []
