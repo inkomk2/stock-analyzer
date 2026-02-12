@@ -197,12 +197,28 @@ def render_ranking_view(scored_stocks):
         
         rank_short = []
         for i, s in enumerate(short_stocks[:50]): # Top 50 limit
+            # Check for earnings
+            earnings_date = get_next_earnings_date(s['Code'])
+            note = ""
+            if earnings_date:
+                from datetime import datetime
+                try:
+                    ed = datetime.strptime(earnings_date, "%Y-%m-%d")
+                    days_left = (ed - datetime.now()).days
+                    if 0 <= days_left <= 14:
+                        note = f"⚠️{days_left}日後"
+                    elif 15 <= days_left <= 30:
+                        note = f"{days_left}日後"
+                except:
+                    pass
+
             rank_short.append({
                 "順位": i + 1,
                 "コード": s['Code'],
                 "銘柄": f"{get_stock_name(s['Code'])}",
                 "現在値": f"{s['Price']:,.0f}",
                 "短期スコア": s.get('ScoreShort', 0),
+                "決算": note,
                 "急騰要因": s.get('Details', '特になし')
             })
             
@@ -210,21 +226,21 @@ def render_ranking_view(scored_stocks):
         
         # Column Config for Short Term
         if mobile_mode:
-            # Select columns that exist in df_short
-            # df_short keys: "順位", "コード", "銘柄", "現在値", "短期スコア", "急騰要因"
-            cols_short = ["順位", "銘柄", "短期スコア", "現在値", "急騰要因"]
+            cols_short = ["順位", "銘柄", "短期スコア", "現在値", "決算", "急騰要因"]
             cfg_short = {
                 "順位": st.column_config.NumberColumn("#", width="small"),
                 "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                "短期スコア": st.column_config.NumberColumn("点数", format="%d", width="small"), # No Bar
+                "短期スコア": st.column_config.NumberColumn("点数", format="%d", width="small"),
                 "現在値": st.column_config.TextColumn("株価", width="small"),
+                "決算": st.column_config.TextColumn("決算", width="small"),
                 "急騰要因": st.column_config.TextColumn("要因", width="small")
             }
         else:
-             cols_short = ["順位", "コード", "銘柄", "短期スコア", "現在値", "急騰要因"]
+             cols_short = ["順位", "コード", "銘柄", "短期スコア", "現在値", "決算", "急騰要因"]
              cfg_short = {
                 "順位": st.column_config.NumberColumn("Rank", width="small"),
                 "短期スコア": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "決算": st.column_config.TextColumn("Earnings", width="small"),
                 "急騰要因": st.column_config.TextColumn("Details", width="large")
             }
 
