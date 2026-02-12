@@ -60,7 +60,8 @@ def get_strategy_metrics(code):
         entry_price = current_price * 0.98 # Place bid slightly lower
         dip_desc = "底値模索 (要監視)"
         
-    stop_loss = entry_price - (2 * atr)
+    # Adjusted to 1.5x ATR for tighter defense (v7.2 Update)
+    stop_loss = entry_price - (1.5 * atr)
     
     target_profit = recent_high
     if (target_profit - entry_price) < (1.5 * atr):

@@ -436,8 +436,8 @@ def render_ranking_view_v2(scored_stocks):
     # Mobile Toggle
     mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
     
-    # Sort by Score
-    ranking_data = sorted(scored_stocks, key=lambda x: x['Score'], reverse=True)
+    # Sort by Score & Limit to Top 20
+    ranking_data = sorted(scored_stocks, key=lambda x: x['Score'], reverse=True)[:20]
     
     rank_list = []
     for i, s in enumerate(ranking_data):
