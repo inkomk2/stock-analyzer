@@ -40,20 +40,27 @@ def get_strategy_metrics(code):
     recent_high = hist['High'].iloc[-60:].max()
     
     # STRATEGY LOGIC (Dynamic)
-    if current_price > ma25 and rsi >= 50:
-        # Strong Momentum -> Trend Follow (MA5)
+    # STRATEGY LOGIC (Dynamic Entry)
+    if current_price > ma5 and rsi >= 60:
+        # Super Strong -> Don't wait, buy now
+        entry_price = current_price
+        dip_desc = "Momentum Buy (成行)"
+    elif current_price > ma25 and rsi >= 45: # Slightly lowered threshold
+        # Strong Trend -> Wait for slight dip
         entry_price = ma5
         dip_desc = "Trend Follow (MA5)"
     elif current_price > ma25:
-        # Weak Momentum -> Wait for Dip (MA25)
+        # Moderate -> Wait for deep dip
         entry_price = ma25
         dip_desc = "Dip Buy (MA25)"
     elif current_price > ma75:
+        # Broken Trend -> Rebound aim
         entry_price = ma75
         dip_desc = "Rebound (MA75)"
     else:
-        entry_price = hist['Low'].iloc[-20:].min()
-        dip_desc = "Recent Low"
+        # Oversold
+        entry_price = current_price
+        dip_desc = "Bottom Fishing"
         
     stop_loss = entry_price - (2 * atr)
     
