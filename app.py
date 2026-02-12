@@ -112,6 +112,9 @@ def render_ranking_view(scored_stocks):
         st.info("データがありません。分析を実行してください。")
         return
 
+    # Mobile Toggle
+    mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
+
     # Create Tabs
     tab1, tab2 = st.tabs(["📈 スイング (本命)", "🚀 短期急騰 (デイ/スキャ)"])
     
@@ -139,38 +142,94 @@ def render_ranking_view(scored_stocks):
             rank_data.append({
                 "順位": i + 1,
                 "コード": s['Code'],
-                "銘柄名": get_stock_name(s['Code']),
+                "銘柄": f"{get_stock_name(s['Code'])}",
                 "現在値": f"{s['Price']:,.0f}",
                 "スコア": s['Score'],
                 "トレンド": "上昇" if s['MA25'] < s['Price'] else "下降",
                 "R/R": f"{s['RR']:.2f}",
-                "備考": note
+                "決算": note,
+                "選定理由": s.get('Details', '')
             })
             
         df = pd.DataFrame(rank_data)
-        st.dataframe(df, height=600, use_container_width=True)
+
+        # Column Config
+        if mobile_mode:
+            cols = ["順位", "銘柄", "スコア", "現在値", "決算"]
+            cfg = {
+                "順位": st.column_config.NumberColumn("#", width="small"),
+                "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
+                "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"),
+                "現在値": st.column_config.TextColumn("株価", width="small"),
+                "決算": st.column_config.TextColumn("決算", width="small"),
+            }
+        else:
+            cols = ["順位", "コード", "銘柄", "スコア", "現在値", "トレンド", "R/R", "決算", "選定理由"]
+            cfg = {
+                "順位": st.column_config.NumberColumn("Rank", width="small"),
+                "スコア": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+            }
+
+        event = st.dataframe(
+            df[cols],
+            column_config=cfg,
+            height=600,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="df_swing"
+        )
+
+        if len(event.selection.rows) > 0:
+            row_idx = event.selection.rows[0]
+            target_code = df.iloc[row_idx]['コード']
+            st.session_state.ranking_target = target_code
+            st.rerun()
 
     # --- TAB 2: SHORT-TERM (Burst) ---
     with tab2:
-        st.caption("※直近3日間の値動き、出来高急増、ローソク足の強さを重視した「今」動いている銘柄")
+        st.caption("※3日間の急騰、出来高急増、ローソク足の強さを重視した「今」動いている銘柄")
         
         # Sort by ScoreShort
         short_stocks = [s for s in scored_stocks if s.get('ScoreShort', 0) > 0]
         short_stocks.sort(key=lambda x: x.get('ScoreShort', 0), reverse=True)
         
         rank_short = []
-        for i, s in enumerate(short_stocks):
+        for i, s in enumerate(short_stocks[:50]): # Top 50 limit
             rank_short.append({
                 "順位": i + 1,
                 "コード": s['Code'],
-                "銘柄名": get_stock_name(s['Code']),
+                "銘柄": f"{get_stock_name(s['Code'])}",
                 "現在値": f"{s['Price']:,.0f}",
                 "短期スコア": s.get('ScoreShort', 0),
                 "急騰要因": s.get('Details', '特になし')
             })
             
         df_short = pd.DataFrame(rank_short)
-        st.dataframe(df_short, height=600, use_container_width=True)
+        
+        # Simple Config for Short Term
+        event_short = st.dataframe(
+            df_short,
+            column_config={
+                "順位": st.column_config.NumberColumn("#", width="small"),
+                "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
+                "短期スコア": st.column_config.ProgressColumn("点数", min_value=0, max_value=100, format="%d"),
+                "急騰要因": st.column_config.TextColumn("要因", width="large")
+            },
+            height=600,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="df_short"
+        )
+        
+        if len(event_short.selection.rows) > 0:
+            row_idx = event_short.selection.rows[0]
+            target_code = df_short.iloc[row_idx]['コード']
+            st.session_state.ranking_target = target_code
+            st.rerun()
 
 # --- Helper Function for Analysis Rendering ---
 def render_analysis_view(code_input):
@@ -355,121 +414,18 @@ with tab1:
     else:
         st.header("日経225 スコアランキング")
         
-        if st.button("🔄 データを更新"):
-            st.cache_data.clear()
-            st.rerun()
-            
-
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            if st.button("🔄 ランキング更新"):
+                st.cache_data.clear()
+                st.rerun()
 
         try:
-            with st.spinner("市場データを分析中..."):
+            with st.spinner("市場データを分析中... (1-2分かかります)"):
                 scores = load_ranking_data()
             
-            if not scores:
-                st.warning("有効なデータが見つかりませんでした。しばらく待ってから「データを更新」ボタンを押してください。")
-            else:
-                # Fixed top 20
-                top_n = 20
-                
-                st.caption(f"分析対象: 全{len(scores)}銘柄 (上位{top_n}件を表示)")
-                
-                displayed_scores = scores[:top_n]
-                target_codes = [row['Code'] for row in displayed_scores]
-                
-                with st.spinner("決算発表日を取得中..."):
-                    earnings_map = fetch_earnings_map(target_codes)
-            
-                # Prepare dataframe for display
-                display_data = []
-                for row in displayed_scores:
-                    name = get_stock_name(row['Code'])
-                    earnings = earnings_map.get(row['Code'], '-')
-                    
-                    # Short earnings date for mobile (e.g. 2026-02-03 -> 02/03)
-                    short_earnings = earnings
-                    if len(earnings) >= 10:
-                        short_earnings = earnings[5:].replace('-', '/')
-                    
-                    display_data.append({
-                        '順位': displayed_scores.index(row) + 1, 
-                        'コード': row['Code'],
-                        '銘柄': f"{name} ({row['Code']})",
-                        'スコア': row['Score'],
-                        '現在値': f"¥{row['Price']:,.0f}", 
-                        '乖離率': f"{row['Deviation']:.1f}%",
-                        '決算発表': earnings,
-                        '決算日(短)': short_earnings, # For mobile
-                        'R/R': f"{row['RR']:.2f}",
-                        '選定理由': row['Details']
-                    })
-                    
-                df_display = pd.DataFrame(display_data)
-                
-                # Mobile Toggle
-                mobile_mode = st.toggle("スマホ表示（省スペース）", value=True)
-                
-                st.caption("👇 **行をタップすると詳細分析が表示されます**")
-                
-                if mobile_mode:
-                    # Compact Column Config for Mobile
-                    # Columns: Rank, Name(with Code), Score, Price, Earnings(Short)
-                    # '順位', '銘柄', 'スコア', '現在値', '決算日(短)' must exist in df_display columns
-                    event = st.dataframe(
-                        df_display[["順位", "銘柄", "スコア", "現在値", "決算日(短)"]], # Score moved before Price
-                        column_config={
-                            "順位": st.column_config.NumberColumn("#", width="small"), # Renamed to #
-                            "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                            "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"), 
-                            "現在値": st.column_config.TextColumn("株価", width="small"),
-                            "決算日(短)": st.column_config.TextColumn("決算", width="small"),
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                        on_select="rerun",
-                        selection_mode="single-row"
-                    )
-                else:
-                    # Full Column Config
-                    event = st.dataframe(
-                        df_display,
-                        column_config={
-                            "順位": st.column_config.NumberColumn("順位", width="small"),
-                            "コード": st.column_config.TextColumn("コード", width="small"),
-                            "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
-                            "スコア": st.column_config.ProgressColumn("スコア", min_value=0, max_value=100, format="%d点"),
-                            "決算発表": st.column_config.TextColumn("決算発表", width="medium"),
-                            "R/R": st.column_config.TextColumn("R/R", width="small"),
-                            "選定理由": st.column_config.TextColumn("選定理由", width="large"),
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                        on_select="rerun",
-                        selection_mode="single-row"
-                    )
-                
-                # Handle Selection
-                if len(event.selection.rows) > 0:
-                    selected_index = event.selection.rows[0]
-                    selected_row = df_display.iloc[selected_index]
-                    target_code = selected_row['コード']
-                    
-                    # Set session state and rerun to show drill-down
-                    st.session_state.ranking_target = target_code
-                    st.rerun()
-
-                st.caption("※ スコアはトレンド・過熱感・リスクリワードから算出されています。")
-                    
-                with st.expander("ℹ️ スコアの見方・目安"):
-                    st.markdown("""
-                    - **80点以上 (激アツ)**: 
-                        上昇トレンド・押し目・リスクリワードの全てが完璧な状態。**強気にエントリー**を検討できる水準です。
-                    - **60点〜79点 (買い推奨)**: 
-                        多くの条件が揃っています。チャートを見てタイミングが合えばエントリー推奨。
-                    - **40点〜59点 (様子見)**: 
-                        悪くはないですが、何か一つ（トレンドが弱い、少し高値圏など）懸念があります。
-                    - **40点未満**: 
-                        現在はエントリーに適していません。
-                    """)
+            # Render the TABS inside this view
+            render_ranking_view(scores)
                 
         except Exception as e:
             st.error(f"データ読み込みエラー: {e}")
