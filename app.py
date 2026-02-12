@@ -142,7 +142,7 @@ def render_ranking_view(scored_stocks):
             rank_data.append({
                 "順位": i + 1,
                 "コード": s['Code'],
-                "銘柄": f"{get_stock_name(s['Code'])}",
+                "銘柄": f"{get_stock_name(s['Code'])} ({s['Code']})",
                 "現在値": f"{s['Price']:,.0f}",
                 "スコア": s['Score'],
                 "トレンド": "上昇" if s['MA25'] < s['Price'] else "下降",
@@ -212,10 +212,9 @@ def render_ranking_view(scored_stocks):
                 except:
                     pass
 
-            rank_short.append({
                 "順位": i + 1,
                 "コード": s['Code'],
-                "銘柄": f"{get_stock_name(s['Code'])}",
+                "銘柄": f"{get_stock_name(s['Code'])} ({s['Code']})",
                 "現在値": f"{s['Price']:,.0f}",
                 "短期スコア": s.get('ScoreShort', 0),
                 "決算": note,
@@ -411,7 +410,7 @@ def render_analysis_view(code_input):
 # --- Helper for Earnings ---
 @st.cache_data(ttl=3600)
 def fetch_earnings_map(codes):
-    """Fetches earnings dates in parallel for a list of codes."""
+    """Fetches earnings dates in parallel (Fast Mode)."""
     earnings_map = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_to_code = {executor.submit(get_next_earnings_date, code): code for code in codes}

@@ -397,7 +397,6 @@ def get_next_earnings_date(code):
             ts = info.get('earningsTimestamp')
             if ts:
                 from datetime import datetime
-                # Convert timestamp (seconds) to date
                 dt = datetime.fromtimestamp(ts)
                 return dt.strftime('%Y-%m-%d')
         except:
