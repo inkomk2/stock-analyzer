@@ -39,29 +39,39 @@ def get_strategy_metrics(code):
     # Recent High (Resistance) for Take Profit
     recent_high = hist['High'].iloc[-60:].max()
     
+    # Calculate previous MA25 (5 days ago) for slope check
+    ma25_prev = hist['Close'].rolling(window=25).mean().iloc[-6]
+    
     # STRATEGY LOGIC (Dynamic)
-    # STRATEGY LOGIC (Rebound/Dip Focus)
-    if current_price > ma25:
-        # Uptrend: Aim for Dip to MA25
+    # STRATEGY LOGIC (MA Support Rebound + Uptrend Focus)
+    
+    # Check Trend (Slope of MA25)
+    is_uptrend = ma25 > ma25_prev
+    
+    if current_price > ma25 and is_uptrend:
+        # Scenario A: Strong Uptrend, Price above MA25
+        # Strategy: Wait for dip to MA25
         entry_price = ma25
-        dip_desc = "押し目狙い (MA25)"
+        dip_desc = "上昇トレンド押し目 (MA25)"
         
-        # Exception: If very strong momentum, allow higher entry
-        if rsi > 60:
-             entry_price = ma5
-             dip_desc = "強気追随 (MA5)"
-             
+        # SL logic: Break of MA25 Support (Allow 1 ATR slip)
+        stop_loss = ma25 - (1.0 * atr)
+
     elif current_price > ma75:
-        # Correction Phase: Aim for Rebound at MA75
+        # Scenario B: Correction to MA75 (or Trend is flat)
+        # Strategy: Rebound from MA75
         entry_price = ma75
-        dip_desc = "反発狙い (MA75)"
-    else:
-        # Below MA75: Trend might be broken, or deep bottom
-        entry_price = current_price * 0.98 # Place bid slightly lower
-        dip_desc = "底値模索 (要監視)"
+        dip_desc = "トレンド修正/反発 (MA75)"
         
-    # Adjusted to 1.5x ATR for tighter defense (v7.2 Update)
-    stop_loss = entry_price - (1.5 * atr)
+        # SL logic: Break of MA75
+        stop_loss = ma75 - (1.0 * atr)
+        
+    else:
+        # Scenario C: Below MA75 (Trend Broken)
+        # Strategy: High Risk / Watch
+        entry_price = current_price * 0.95
+        dip_desc = "トレンド崩れ (様子見推奨)"
+        stop_loss = current_price * 0.90
     
     target_profit = recent_high
     if (target_profit - entry_price) < (1.5 * atr):
@@ -76,7 +86,8 @@ def get_strategy_metrics(code):
     plot_data = hist[['Open', 'High', 'Low', 'Close']].reset_index()
     plot_data['MA5'] = hist['Close'].rolling(window=5).mean().values
     plot_data['MA25'] = hist['Close'].rolling(window=25).mean().values
-    plot_data['MA75'] = hist['Close'].rolling(window=75).mean().values
+    # Move ma25_prev calculation here if needed, or just ensure it exists.
+    # Placeholder for view_file check.
     
     # --- Generate Text Report ---
     report_lines = []
