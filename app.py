@@ -426,8 +426,8 @@ def fetch_earnings_map(codes):
 
 # --- v2: Rebound Strategy Ranking View ---
 def render_ranking_view_v2(scored_stocks):
-    st.header("🏆 反発・押し目狙いランキング")
-    st.caption("※上昇トレンド中の「押し目（MA25接近）」や「リバウンド局面」にある銘柄を抽出")
+    st.header("🏆 スイングトレード 推奨ランキング")
+    st.caption("※上昇トレンド中の押し目・リバウンド銘柄をスコア順にTop20表示。エントリー/利確/損切りは推奨値。")
     
     if not scored_stocks:
         st.info("データがありません。分析を実行してください。")
@@ -455,6 +455,12 @@ def render_ranking_view_v2(scored_stocks):
                     note = f"{days_left}日後"
             except:
                 pass
+        
+        # Price formatting
+        entry_price = s.get('EntryPrice', 0)
+        target_profit = s.get('TargetProfit', 0)
+        stop_loss = s.get('StopLoss', 0)
+        rr = s.get('RR', 0)
                 
         rank_list.append({
             "順位": i + 1,
@@ -462,6 +468,11 @@ def render_ranking_view_v2(scored_stocks):
             "銘柄": f"{get_stock_name(s['Code'])} ({s['Code']})",
             "現在値": f"{s['Price']:,.0f}",
             "スコア": s['Score'],
+            "エントリー": f"{entry_price:,.0f}" if entry_price else "-",
+            "利確": f"{target_profit:,.0f}" if target_profit else "-",
+            "損切り": f"{stop_loss:,.0f}" if stop_loss else "-",
+            "R/R": f"{rr:.1f}" if rr else "-",
+            "戦略": s.get('DipDesc', ''),
             "乖離率": s.get('Deviation', 0), 
             "RSI": s.get('RSI', 0),
             "決算": note,
@@ -472,20 +483,28 @@ def render_ranking_view_v2(scored_stocks):
     
     # Column Config
     if mobile_mode:
-        cols = ["順位", "銘柄", "スコア", "乖離率", "現在値", "決算"]
+        cols = ["順位", "銘柄", "スコア", "現在値", "エントリー", "利確", "損切り", "決算"]
         cfg = {
             "順位": st.column_config.NumberColumn("#", width="small"),
             "銘柄": st.column_config.TextColumn("銘柄", width="medium"),
             "スコア": st.column_config.NumberColumn("点数", format="%d", width="small"),
-            "乖離率": st.column_config.NumberColumn("MA乖離", format="%.1f%%", width="small"),
-            "現在値": st.column_config.TextColumn("株価", width="small"),
+            "現在値": st.column_config.TextColumn("現在値", width="small"),
+            "エントリー": st.column_config.TextColumn("Entry", width="small"),
+            "利確": st.column_config.TextColumn("利確", width="small"),
+            "損切り": st.column_config.TextColumn("損切", width="small"),
             "決算": st.column_config.TextColumn("決算", width="small"),
         }
     else:
-        cols = ["順位", "コード", "銘柄", "スコア", "乖離率", "RSI", "現在値", "決算", "選定理由"]
+        cols = ["順位", "コード", "銘柄", "スコア", "現在値", "エントリー", "利確", "損切り", "R/R", "戦略", "乖離率", "RSI", "決算", "選定理由"]
         cfg = {
              "順位": st.column_config.NumberColumn("Rank", width="small"),
              "スコア": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+             "現在値": st.column_config.TextColumn("現在値"),
+             "エントリー": st.column_config.TextColumn("Entry"),
+             "利確": st.column_config.TextColumn("利確"),
+             "損切り": st.column_config.TextColumn("損切"),
+             "R/R": st.column_config.TextColumn("R/R"),
+             "戦略": st.column_config.TextColumn("戦略"),
              "乖離率": st.column_config.NumberColumn("Diff(MA25)", format="%.1f%%"),
              "RSI": st.column_config.NumberColumn("RSI", format="%.1f"),
              "決算": st.column_config.TextColumn("Earnings", width="small"),

@@ -210,6 +210,44 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         # --- v7.2 Clean Up ---
         score_short = 0 
         
+        # --- SWING STRATEGY PRICE CALCULATION ---
+        # Reuse already-computed MA/ATR values for efficiency
+        
+        # Recent High (60 trading days ~ 3 months)
+        recent_high = hist['High'].iloc[-60:].max()
+        
+        # MA25 slope check (already computed: ma25 vs ma25_prev)
+        is_uptrend = ma25 > ma25_prev
+        
+        if current_price > ma25 and is_uptrend:
+            # Scenario A: Strong Uptrend → Wait for dip to MA25
+            entry_price = ma25
+            dip_desc = "上昇トレンド押し目 (MA25)"
+            stop_loss = ma25 - (1.0 * atr) if atr > 0 else ma25 * 0.97
+        elif current_price > ma75:
+            # Scenario B: Correction → Rebound from MA75
+            entry_price = ma75
+            dip_desc = "トレンド修正/反発 (MA75)"
+            stop_loss = ma75 - (1.0 * atr) if atr > 0 else ma75 * 0.97
+        else:
+            # Scenario C: Below MA75 → High Risk
+            entry_price = current_price * 0.95
+            dip_desc = "トレンド崩れ (様子見推奨)"
+            stop_loss = current_price * 0.90
+        
+        # Take Profit: 直近高値の少し下（2%下）で利確
+        # 利確ラインが高すぎると到達しにくいため、控えめに設定
+        target_profit = recent_high * 0.98
+        
+        # If target is too close to entry, use ATR-based fallback
+        if atr > 0 and (target_profit - entry_price) < (1.5 * atr):
+            target_profit = entry_price + (3 * atr)
+        
+        # Risk Reward Calculation
+        potential_profit = target_profit - entry_price
+        potential_loss = entry_price - stop_loss
+        rr_ratio = potential_profit / potential_loss if potential_loss > 0 else 0
+        
         # --- FEATURE TAGS & REASON ---
         short_reason = []
         if score >= 80: short_reason.append("絶好の押し目")
@@ -233,6 +271,13 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
         commentary.append(f"・押し目度: {int(score_dip)}/50")
         commentary.append(f"・タイミング: {int(score_timing)}/30")
         
+        commentary.append("【戦略】")
+        commentary.append(f"・{dip_desc}")
+        commentary.append(f"・エントリー: {int(entry_price):,}円")
+        commentary.append(f"・利確目標: {int(target_profit):,}円")
+        commentary.append(f"・損切り: {int(stop_loss):,}円")
+        commentary.append(f"・R/R比: {rr_ratio:.2f}")
+        
         final_commentary = "\n".join(commentary)
         
         return {
@@ -246,7 +291,11 @@ def analyze_stock(code, hist_data=None, fundamentals=None):
             "PBR": pbr,
             "PER": per,
             "Yield": 0,
-            "RR": 0,
+            "RR": rr_ratio,
+            "EntryPrice": entry_price,
+            "TargetProfit": target_profit,
+            "StopLoss": stop_loss,
+            "DipDesc": dip_desc,
             "Details": "、".join(short_reason) if short_reason else "特になし",
             "AnalysisSummary": final_commentary,
             "ScoreDetail": {
